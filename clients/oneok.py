@@ -20,165 +20,149 @@ from processor import (
 def process_oneok_workbook(wb: Workbook) -> None:
     ws = wb.active
 
-    process_orientation_columns(ws)
-    process_delta_columns(ws)
-    process_length_width_final(ws)
-    process_feature_type_final(ws)
-    process_comments(ws)
+    headers = _ensure_oneok_columns(ws)
+    _process_oneok_single_pass(ws, headers)
 
 
 # ---------------------------
-# ORIENTATION
+# COLUMN SETUP
 # ---------------------------
 
-def process_orientation_columns(ws) -> None:
+def _ensure_oneok_columns(ws) -> dict[str, int]:
     headers = get_headers(ws)
 
-    main_col = headers.get("orientation main")
-    if main_col is None:
-        raise ValueError('Column "Orientation Main" not found.')
-
-    if "orientation final" not in headers:
+    # Orientation outputs
+    if "orientation final" not in headers and "orientation main" in headers:
         ensure_column_after(ws, "Orientation Main", "Orientation Final", headers)
         headers = get_headers(ws)
 
-    if "orientation final (degree)" not in headers:
+    if "orientation final (degree)" not in headers and "orientation final" in headers:
         ensure_column_after(ws, "Orientation Final", "Orientation Final (Degree)", headers)
         headers = get_headers(ws)
 
-    long_col = headers.get("long seam orientation")
-    if long_col is not None and "long seam orientation (degree)" not in headers:
+    if "long seam orientation" in headers and "long seam orientation (degree)" not in headers:
+        long_col = headers["long seam orientation"]
         ws.insert_cols(long_col + 1)
         ws.cell(row=1, column=long_col + 1).value = "Long Seam Orientation (Degree)"
         headers = get_headers(ws)
 
-    main_col = headers["orientation main"]
-    final_col = headers["orientation final"]
-    final_deg_col = headers["orientation final (degree)"]
-    long_col = headers.get("long seam orientation")
-    long_deg_col = headers.get("long seam orientation (degree)")
-    feature_col = headers.get("feature type")
+    # Length/Width final
+    if "length (in)" in headers and "length (in) final" not in headers:
+        ensure_column_after(ws, "Length (in)", "Length (in) Final", headers)
+        headers = get_headers(ws)
 
+    if "width (in)" in headers and "width (in) final" not in headers:
+        ensure_column_after(ws, "Width (in)", "Width (in) Final", headers)
+        headers = get_headers(ws)
+
+    # Depth outputs
+    depth_candidates = ["Depth (%)", "Depth %", "Depth", "% Depth"]
+    depth_col = find_first_column(ws, depth_candidates, headers)
+
+    if depth_col is not None and "depth (%wt)" not in headers:
+        ensure_column_after(ws, "Depth (%)", "Depth (%WT)", headers)
+        headers = get_headers(ws)
+
+    if depth_col is not None and "depth (%od)" not in headers:
+        ensure_column_after(ws, "Depth (%)", "Depth (%OD)", headers)
+        headers = get_headers(ws)
+
+    # Feature / tool / comments
+    if "feature type" in headers and "feature type final" not in headers:
+        ensure_column_after(ws, "Feature Type", "Feature Type Final", headers)
+        headers = get_headers(ws)
+
+    if "feature type" in headers and "tool technology final" not in headers:
+        ensure_column_after(ws, "Feature Type", "Tool Technology Final", headers)
+        headers = get_headers(ws)
+
+    if "comments" not in headers:
+        anchor = "Feature Type Final" if "feature type final" in headers else "Feature Type"
+        if anchor.lower() in headers:
+            ensure_column_after(ws, anchor, "Comments", headers)
+            headers = get_headers(ws)
+
+    if "comments" in headers and "comment working 2 (gw proximity)" not in headers:
+        ensure_column_after(ws, "Comments", "Comment Working 2 (GW Proximity)", headers)
+        headers = get_headers(ws)
+
+    return get_headers(ws)
+
+
+# ---------------------------
+# SINGLE PASS
+# ---------------------------
+
+def _process_oneok_single_pass(ws, headers: dict[str, int]) -> None:
     max_row = ws.max_row
 
-    for row in range(2, max_row + 1):
-        main_value = ws.cell(row=row, column=main_col).value
-        cleaned_main = clean_orientation(main_value)
-
-        if cleaned_main:
-            ws.cell(row=row, column=final_col).value = cleaned_main
-            ws.cell(row=row, column=final_deg_col).value = orientation_to_degrees(cleaned_main)
-        else:
-            ws.cell(row=row, column=final_col).value = ""
-            ws.cell(row=row, column=final_deg_col).value = ""
-
-        if long_col is None or long_deg_col is None:
-            continue
-
-        feature_value = ws.cell(row=row, column=feature_col).value if feature_col else None
-        long_value = ws.cell(row=row, column=long_col).value
-
-        if is_girth_weld(feature_value):
-            cleaned_long = clean_orientation(long_value)
-
-            if cleaned_long:
-                long_deg = orientation_to_degrees(cleaned_long)
-
-                ws.cell(row=row, column=long_col).value = cleaned_long
-                ws.cell(row=row, column=long_deg_col).value = long_deg
-                ws.cell(row=row, column=final_col).value = cleaned_long
-                ws.cell(row=row, column=final_deg_col).value = long_deg
-            else:
-                ws.cell(row=row, column=long_col).value = ""
-                ws.cell(row=row, column=long_deg_col).value = ""
-                ws.cell(row=row, column=final_col).value = ""
-                ws.cell(row=row, column=final_deg_col).value = ""
-        else:
-            ws.cell(row=row, column=long_col).value = ""
-            ws.cell(row=row, column=long_deg_col).value = ""
-
-    for row in range(2, max_row + 1):
-        ws.cell(row=row, column=final_col).number_format = "@"
-        ws.cell(row=row, column=final_deg_col).number_format = "0"
-
-        if long_col is not None and long_deg_col is not None:
-            ws.cell(row=row, column=long_col).number_format = "@"
-            ws.cell(row=row, column=long_deg_col).number_format = "0"
-
-    fill_column_green(ws, final_col)
-    fill_column_green(ws, final_deg_col)
-
-    if long_col is not None and long_deg_col is not None:
-        fill_column_green(ws, long_col)
-        fill_column_green(ws, long_deg_col)
-
-
-# ---------------------------
-# DELTA
-# ---------------------------
-
-def process_delta_columns(ws) -> None:
-    headers = get_headers(ws)
-
+    # Source columns
     feature_col = headers.get("feature type")
-    is_marker_col = headers.get("ismarker")
+    if feature_col is None:
+        return
 
-    weld_delta_col = _find_delta_column(headers, [
+    is_marker_col = headers.get("ismarker")
+    is_external_col = headers.get("is external")
+    sensor_type_col = headers.get("sensor type")
+
+    orientation_main_col = headers.get("orientation main")
+    long_seam_col = headers.get("long seam orientation")
+    bend_radius_col = headers.get("bend radius (xd)")
+    bend_angle_col = headers.get("bend angle")
+    bend_orientation_col = headers.get("bend orientation")
+    length_col = headers.get("length (in)")
+    width_col = headers.get("width (in)")
+    depth_col = find_first_column(ws, ["Depth (%)", "Depth %", "Depth", "% Depth"], headers)
+
+    # Output columns
+    orientation_final_col = headers.get("orientation final")
+    orientation_final_deg_col = headers.get("orientation final (degree)")
+    long_seam_deg_col = headers.get("long seam orientation (degree)")
+    length_final_col = headers.get("length (in) final")
+    width_final_col = headers.get("width (in) final")
+    depth_wt_col = headers.get("depth (%wt)")
+    depth_od_col = headers.get("depth (%od)")
+    feature_type_final_col = headers.get("feature type final")
+    tool_technology_final_col = headers.get("tool technology final")
+    comments_col = headers.get("comments")
+    gw_proximity_col = headers.get("comment working 2 (gw proximity)")
+
+    # Delta columns
+    weld_delta_main_col = _find_delta_column(headers, [
         "US Weld Δ main (ft)",
         "US Weld ? main (ft)",
         "US Weld Delta main (ft)",
     ])
-
-    marker_delta_col = _find_delta_column(headers, [
+    marker_delta_main_col = _find_delta_column(headers, [
         "US Marker Δ main (ft)",
         "US Marker ? main (ft)",
         "US Marker Delta main (ft)",
     ])
 
-    max_row = ws.max_row
+    # GW proximity source columns
+    us_left_col = _find_delta_column(headers, [
+        "US Weld Δ from left edge (ft)",
+        "US Weld ? from left edge (ft)",
+        "US Weld Delta from left edge (ft)",
+    ])
+    ds_left_col = _find_delta_column(headers, [
+        "DS Weld Δ from left edge (ft)",
+        "DS Weld ? from left edge (ft)",
+        "DS Weld Delta from left edge (ft)",
+    ])
+    us_right_col = _find_delta_column(headers, [
+        "US Weld Δ from right edge (ft)",
+        "US Weld ? from right edge (ft)",
+        "US Weld Delta from right edge (ft)",
+    ])
+    ds_right_col = _find_delta_column(headers, [
+        "DS Weld Δ from right edge (ft)",
+        "DS Weld ? from right edge (ft)",
+        "DS Weld Delta from right edge (ft)",
+    ])
 
-    if feature_col is not None and weld_delta_col is not None:
-        for row in range(2, max_row + 1):
-            if is_girth_weld(ws.cell(row=row, column=feature_col).value):
-                ws.cell(row=row, column=weld_delta_col).value = 0
-        fill_column_green(ws, weld_delta_col)
-
-    if is_marker_col is not None and marker_delta_col is not None:
-        for row in range(2, max_row + 1):
-            if parse_yes(ws.cell(row=row, column=is_marker_col).value):
-                ws.cell(row=row, column=marker_delta_col).value = 0
-        fill_column_green(ws, marker_delta_col)
-
-
-# ---------------------------
-# LENGTH / WIDTH FINAL
-# ---------------------------
-
-def process_length_width_final(ws) -> None:
-    headers = get_headers(ws)
-
-    feature_col = headers.get("feature type")
-    length_col = headers.get("length (in)")
-    width_col = headers.get("width (in)")
-
-    if feature_col is None or length_col is None or width_col is None:
-        return
-
-    if "length (in) final" not in headers:
-        ensure_column_after(ws, "Length (in)", "Length (in) Final", headers)
-        headers = get_headers(ws)
-
-    if "width (in) final" not in headers:
-        ensure_column_after(ws, "Width (in)", "Width (in) Final", headers)
-        headers = get_headers(ws)
-
-    feature_col = headers["feature type"]
-    length_col = headers["length (in)"]
-    width_col = headers["width (in)"]
-    length_final_col = headers["length (in) final"]
-    width_final_col = headers["width (in) final"]
-
-    target_features = {
+    # Feature sets
+    length_width_features = {
         "cp attachment",
         "metal object - touching",
         "pipe support - rectangular",
@@ -188,67 +172,280 @@ def process_length_width_final(ws) -> None:
         "tee",
     }
 
-    for row in range(2, ws.max_row + 1):
-        feature = normalize_feature_type(ws.cell(row=row, column=feature_col).value)
+    depth_wt_features = {
+        "metal loss",
+        "metal loss manufacturing",
+        "ncf-a",
+        "ncf-b",
+        "sswc",
+        "swa",
+        "swf-a",
+        "swf-b",
+    }
 
-        length_final = ""
-        width_final = ""
+    depth_od_features = {
+        "deformation",
+        "deformation - ovality",
+        "deformation w/ metal loss",
+    }
 
-        if feature in target_features:
-            length_val = ws.cell(row=row, column=length_col).value
-            width_val = ws.cell(row=row, column=width_col).value
+    gw_adjacent_features = {
+        "deformation",
+        "deformation - ovality",
+        "deformation w/ metal loss",
+        "manufacturing anomaly",
+        "metal loss",
+        "metal loss manufacturing",
+        "ncf-a",
+        "ncf-b",
+        "sswc",
+        "stopple",
+        "swa",
+    }
 
-            rounded_length = _round_to_zero_decimal(length_val)
-            rounded_width = _round_to_zero_decimal(width_val)
-
-            length_final = "" if rounded_length is None else rounded_length
-            width_final = "" if rounded_width is None else rounded_width
-
-        ws.cell(row=row, column=length_final_col).value = length_final
-        ws.cell(row=row, column=width_final_col).value = width_final
-
-    for row in range(2, ws.max_row + 1):
-        ws.cell(row=row, column=length_final_col).number_format = "0"
-        ws.cell(row=row, column=width_final_col).number_format = "0"
-
-    fill_column_green(ws, length_final_col)
-    fill_column_green(ws, width_final_col)
-
-# ---------------------------
-# FEATURE TYPE FINAL
-# ---------------------------
-
-def process_feature_type_final(ws) -> None:
-    headers = get_headers(ws)
-
-    feature_col = headers.get("feature type")
-    if feature_col is None:
-        return
-
-    if "feature type final" not in headers:
-        ensure_column_after(ws, "Feature Type", "Feature Type Final", headers)
-        headers = get_headers(ws)
-
-    feature_col = headers["feature type"]
-    final_col = headers["feature type final"]
-    is_marker_col = headers.get("ismarker")
-    depth_col = find_first_column(ws, ["Depth (%)", "Depth %", "Depth", "% Depth"], headers)
-
-    max_row = ws.max_row
-
+    # One pass across rows
     for row in range(2, max_row + 1):
         feature_value = ws.cell(row=row, column=feature_col).value
-        marker_value = ws.cell(row=row, column=is_marker_col).value if is_marker_col else None
-        depth_value = ws.cell(row=row, column=depth_col).value if depth_col else None
+        feature = normalize_feature_type(feature_value)
 
-        ws.cell(row=row, column=final_col).value = map_feature_type_final(
+        is_marker_value = ws.cell(row=row, column=is_marker_col).value if is_marker_col else None
+        is_external_value = ws.cell(row=row, column=is_external_col).value if is_external_col else None
+        sensor_type_value = ws.cell(row=row, column=sensor_type_col).value if sensor_type_col else None
+        sensor_type = normalize_feature_type(sensor_type_value)
+
+        existing_comment = ws.cell(row=row, column=comments_col).value if comments_col else None
+        existing_comment_text = "" if existing_comment is None else str(existing_comment).strip()
+
+        # -------------------
+        # Orientation block
+        # -------------------
+        orientation_final_val = ""
+        orientation_final_deg_val = ""
+        long_seam_cleaned_val = ""
+        long_seam_deg_val = ""
+
+        if orientation_main_col and orientation_final_col:
+            cleaned_main = clean_orientation(ws.cell(row=row, column=orientation_main_col).value)
+
+            if cleaned_main:
+                orientation_final_val = cleaned_main
+                deg = orientation_to_degrees(cleaned_main)
+                orientation_final_deg_val = "" if deg is None else deg
+
+        if long_seam_col and long_seam_deg_col:
+            if is_girth_weld(feature_value):
+                cleaned_long = clean_orientation(ws.cell(row=row, column=long_seam_col).value)
+                if cleaned_long:
+                    long_seam_cleaned_val = cleaned_long
+                    deg = orientation_to_degrees(cleaned_long)
+                    long_seam_deg_val = "" if deg is None else deg
+
+                    # Girth Weld override
+                    orientation_final_val = cleaned_long
+                    orientation_final_deg_val = long_seam_deg_val
+            else:
+                long_seam_cleaned_val = ""
+                long_seam_deg_val = ""
+
+        if orientation_final_col:
+            ws.cell(row=row, column=orientation_final_col).value = orientation_final_val
+            ws.cell(row=row, column=orientation_final_col).number_format = "@"
+
+        if orientation_final_deg_col:
+            ws.cell(row=row, column=orientation_final_deg_col).value = orientation_final_deg_val
+            ws.cell(row=row, column=orientation_final_deg_col).number_format = "0"
+
+        if long_seam_col:
+            ws.cell(row=row, column=long_seam_col).value = long_seam_cleaned_val
+            ws.cell(row=row, column=long_seam_col).number_format = "@"
+
+        if long_seam_deg_col:
+            ws.cell(row=row, column=long_seam_deg_col).value = long_seam_deg_val
+            ws.cell(row=row, column=long_seam_deg_col).number_format = "0"
+
+        # -------------------
+        # Delta block
+        # -------------------
+        if weld_delta_main_col and is_girth_weld(feature_value):
+            ws.cell(row=row, column=weld_delta_main_col).value = 0
+
+        if marker_delta_main_col and parse_yes(is_marker_value):
+            ws.cell(row=row, column=marker_delta_main_col).value = 0
+
+        # -------------------
+        # Length / Width Final
+        # -------------------
+        if length_final_col:
+            length_final = ""
+            if feature in length_width_features and length_col:
+                length_final = _round_to_zero_decimal(ws.cell(row=row, column=length_col).value)
+                length_final = "" if length_final is None else length_final
+            ws.cell(row=row, column=length_final_col).value = length_final
+            ws.cell(row=row, column=length_final_col).number_format = "0"
+
+        if width_final_col:
+            width_final = ""
+            if feature in length_width_features and width_col:
+                width_final = _round_to_zero_decimal(ws.cell(row=row, column=width_col).value)
+                width_final = "" if width_final is None else width_final
+            ws.cell(row=row, column=width_final_col).value = width_final
+            ws.cell(row=row, column=width_final_col).number_format = "0"
+
+        # -------------------
+        # Depth outputs
+        # -------------------
+        source_depth_value = ws.cell(row=row, column=depth_col).value if depth_col else None
+
+        if depth_wt_col:
+            depth_wt_value = source_depth_value if feature in depth_wt_features and source_depth_value is not None else ""
+            ws.cell(row=row, column=depth_wt_col).value = depth_wt_value
+
+        if depth_od_col:
+            depth_od_value = source_depth_value if feature in depth_od_features and source_depth_value is not None else ""
+            ws.cell(row=row, column=depth_od_col).value = depth_od_value
+
+        # -------------------
+        # Feature Type Final
+        # -------------------
+        feature_type_final_val = map_feature_type_final(
             feature_value=feature_value,
-            is_marker_value=marker_value,
-            depth_value=depth_value,
+            is_marker_value=is_marker_value,
+            depth_value=source_depth_value,
         )
 
-    fill_column_green(ws, final_col)
+        if feature_type_final_col:
+            ws.cell(row=row, column=feature_type_final_col).value = feature_type_final_val
 
+        # -------------------
+        # Tool Technology Final
+        # -------------------
+        tool_technology_final_val = map_tool_technology_final(feature, sensor_type)
+
+        if tool_technology_final_col:
+            ws.cell(row=row, column=tool_technology_final_col).value = tool_technology_final_val
+
+        # -------------------
+        # Comments
+        # -------------------
+        comment = ""
+        gw_comment = ""
+
+        if feature in {
+            "repair marker begin",
+            "agm",
+            "casing begin",
+            "girth weld",
+            "marker band begin",
+            "recoat begin",
+            "sleeve begin",
+        }:
+            comment = existing_comment_text
+
+        elif feature == "valve":
+            comment = existing_comment_text if parse_yes(is_marker_value) else (str(feature_value).strip() if feature_value else "")
+
+        elif feature == "bend":
+            radius_val = ws.cell(row=row, column=bend_radius_col).value if bend_radius_col else None
+            angle_val = ws.cell(row=row, column=bend_angle_col).value if bend_angle_col else None
+            orientation_val = ws.cell(row=row, column=bend_orientation_col).value if bend_orientation_col else None
+            comment = comment_bend(radius_val, angle_val, orientation_val)
+
+        elif feature in {
+            "half sole repair",
+            "magnet",
+            "patch repair",
+            "pipe support - rectangular",
+            "puddle weld repair",
+            "repair marker end",
+            "river weight",
+            "casing end",
+            "flange",
+            "marker band end",
+            "pipe support - circumferential",
+            "recoat end",
+            "sleeve end",
+        }:
+            comment = str(feature_value).strip() if feature_value else ""
+
+        elif feature in {"deformation", "deformation - ovality", "deformation w/ metal loss"}:
+            comment = "Deformation"
+
+        elif feature == "manufacturing anomaly":
+            comment = "Manufacturing Anomaly"
+
+        elif feature in {"metal loss", "metal loss manufacturing", "swa"}:
+            side = "External" if parse_yes(is_external_value) else "Internal"
+            comment = f"Metal Loss - {side}"
+
+        elif feature in {"ncf-a", "ncf-b"}:
+            length_val = ws.cell(row=row, column=length_col).value if length_col else None
+            width_val = ws.cell(row=row, column=width_col).value if width_col else None
+            comment = comment_ncf(length_val, width_val)
+
+        elif feature == "sswc":
+            comment = "Possible selective seam weld corrosion"
+
+        elif feature == "weld anomaly":
+            comment = "Possible Girth Weld Anomaly"
+
+        elif feature == "stopple":
+            comment = comment_stopple(orientation_final_val)
+
+        elif feature == "tap":
+            comment = comment_tap(orientation_final_val)
+
+        elif feature == "tee":
+            comment = comment_tee(orientation_final_val)
+
+        elif feature_type_final_val.lower() == "gain":
+            if "attachment" in existing_comment_text.lower():
+                comment = existing_comment_text
+            else:
+                comment = str(feature_value).strip() if feature_value else ""
+
+        if feature in gw_adjacent_features:
+            if is_adjacent_to_girth_weld(
+                ws, row,
+                us_left_col,
+                ds_left_col,
+                us_right_col,
+                ds_right_col,
+            ):
+                gw_comment = "adjacent to girth weld"
+
+        if comments_col:
+            ws.cell(row=row, column=comments_col).value = comment
+
+        if gw_proximity_col:
+            ws.cell(row=row, column=gw_proximity_col).value = gw_comment
+
+    # Highlight output columns once at the end
+    for name in [
+        "orientation final",
+        "orientation final (degree)",
+        "long seam orientation",
+        "long seam orientation (degree)",
+        "length (in) final",
+        "width (in) final",
+        "depth (%wt)",
+        "depth (%od)",
+        "feature type final",
+        "tool technology final",
+        "comments",
+        "comment working 2 (gw proximity)",
+    ]:
+        col = headers.get(name)
+        if col:
+            fill_column_green(ws, col)
+
+    for col in [weld_delta_main_col, marker_delta_main_col]:
+        if col:
+            fill_column_green(ws, col)
+
+
+# ---------------------------
+# CLASSIFICATION HELPERS
+# ---------------------------
 
 def map_feature_type_final(*, feature_value: object, is_marker_value: object, depth_value: object) -> str:
     feature = normalize_feature_type(feature_value)
@@ -333,214 +530,31 @@ def map_feature_type_final(*, feature_value: object, is_marker_value: object, de
     return ""
 
 
-# ---------------------------
-# COMMENTS
-# ---------------------------
+def map_tool_technology_final(feature: str, sensor: str) -> str:
+    if feature in {"sswc", "swf-a", "swf-b"}:
+        return "CMFL"
 
-def process_comments(ws) -> None:
-    headers = get_headers(ws)
+    if feature in {"deformation", "deformation - ovality", "deformation w/ metal loss"}:
+        return "Geometry"
 
-    feature_col = headers.get("feature type")
-    if feature_col is None:
-        return
+    if feature in {"ncf-a", "ncf-b"}:
+        return "IDD-SM"
 
-    if "comments" not in headers:
-        anchor = "Feature Type Final" if "feature type final" in headers else "Feature Type"
-        ensure_column_after(ws, anchor, "Comments", headers)
-        headers = get_headers(ws)
+    if feature in {"swa", "weld anomaly"}:
+        if sensor == "axial":
+            return "AMFL"
+        if sensor == "circumferential":
+            return "CMFL"
 
-    if "comment working 2 (gw proximity)" not in headers:
-        ensure_column_after(ws, "Comments", "Comment Working 2 (GW Proximity)", headers)
-        headers = get_headers(ws)
+    if feature == "manufacturing anomaly":
+        if sensor == "axial":
+            return "AMFL"
+        if sensor == "circumferential":
+            return "CMFL"
+        if sensor == "geometry":
+            return "Geometry"
 
-    feature_col = headers["feature type"]
-    comments_col = headers["comments"]
-    gw_col = headers["comment working 2 (gw proximity)"]
-    feature_final_col = headers.get("feature type final")
-
-    bend_radius_col = headers.get("bend radius (xd)")
-    bend_angle_col = headers.get("bend angle")
-    bend_orientation_col = headers.get("bend orientation")
-    is_external_col = headers.get("is external")
-    is_marker_col = headers.get("ismarker")
-    length_col = headers.get("length (in)")
-    width_col = headers.get("width (in)")
-    orientation_final_col = headers.get("orientation final")
-    orientation_main_col = headers.get("orientation main")
-
-    us_left_col = _find_delta_column(headers, [
-        "US Weld Δ from left edge (ft)",
-        "US Weld ? from left edge (ft)",
-        "US Weld Delta from left edge (ft)",
-    ])
-    ds_left_col = _find_delta_column(headers, [
-        "DS Weld Δ from left edge (ft)",
-        "DS Weld ? from left edge (ft)",
-        "DS Weld Delta from left edge (ft)",
-    ])
-    us_right_col = _find_delta_column(headers, [
-        "US Weld Δ from right edge (ft)",
-        "US Weld ? from right edge (ft)",
-        "US Weld Delta from right edge (ft)",
-    ])
-    ds_right_col = _find_delta_column(headers, [
-        "DS Weld Δ from right edge (ft)",
-        "DS Weld ? from right edge (ft)",
-        "DS Weld Delta from right edge (ft)",
-    ])
-
-    max_row = ws.max_row
-
-    for row in range(2, max_row + 1):
-        feature_value = ws.cell(row=row, column=feature_col).value
-        feature = normalize_feature_type(feature_value)
-
-        existing_comment = ws.cell(row=row, column=comments_col).value
-        existing_comment_text = "" if existing_comment is None else str(existing_comment).strip()
-
-        feature_final = normalize_feature_type(
-            ws.cell(row=row, column=feature_final_col).value if feature_final_col else None
-        )
-
-        is_marker_value = ws.cell(row=row, column=is_marker_col).value if is_marker_col else None
-
-        comment = ""
-        gw_comment = ""
-
-        # Preserve existing comments
-        if feature in {
-            "repair marker begin",
-            "agm",
-            "casing begin",
-            "girth weld",
-            "marker band begin",
-            "recoat begin",
-            "sleeve begin",
-        }:
-            comment = existing_comment_text
-
-        # Valve
-        elif feature == "valve":
-            if parse_yes(is_marker_value):
-                comment = existing_comment_text
-            else:
-                comment = str(feature_value).strip() if feature_value else ""
-
-        # Bend
-        elif feature == "bend":
-            radius = ws.cell(row=row, column=bend_radius_col).value if bend_radius_col else None
-            angle = ws.cell(row=row, column=bend_angle_col).value if bend_angle_col else None
-            orientation = ws.cell(row=row, column=bend_orientation_col).value if bend_orientation_col else None
-            comment = comment_bend(radius, angle, orientation)
-
-        # Simple copy rules
-        elif feature in {
-            "half sole repair",
-            "magnet",
-            "patch repair",
-            "pipe support - rectangular",
-            "puddle weld repair",
-            "repair marker end",
-            "river weight",
-            "casing end",
-            "flange",
-            "marker band end",
-            "pipe support - circumferential",
-            "recoat end",
-            "sleeve end",
-        }:
-            comment = str(feature_value).strip() if feature_value else ""
-
-        # Deformation
-        elif feature in {"deformation", "deformation - ovality", "deformation w/ metal loss"}:
-            comment = "Deformation"
-
-        # Manufacturing Anomaly
-        elif feature == "manufacturing anomaly":
-            comment = "Manufacturing Anomaly"
-
-        # Metal Loss / SWA
-        elif feature in {"metal loss", "metal loss manufacturing", "swa"}:
-            ext_val = ws.cell(row=row, column=is_external_col).value if is_external_col else None
-            side = "External" if parse_yes(ext_val) else "Internal"
-            comment = f"Metal Loss - {side}"
-
-        # NCF
-        elif feature in {"ncf-a", "ncf-b"}:
-            length_value = ws.cell(row=row, column=length_col).value if length_col else None
-            width_value = ws.cell(row=row, column=width_col).value if width_col else None
-            comment = comment_ncf(length_value, width_value)
-
-        # SSWC
-        elif feature == "sswc":
-            comment = "Possible selective seam weld corrosion"
-
-        # Weld Anomaly
-        elif feature == "weld anomaly":
-            comment = "Possible Girth Weld Anomaly"
-
-        # Stopple
-        elif feature == "stopple":
-            orientation_value = (
-                ws.cell(row=row, column=orientation_final_col).value
-                if orientation_final_col else
-                (ws.cell(row=row, column=orientation_main_col).value if orientation_main_col else None)
-            )
-            comment = comment_stopple(orientation_value)
-
-        # Tap
-        elif feature == "tap":
-            orientation_value = (
-                ws.cell(row=row, column=orientation_final_col).value
-                if orientation_final_col else
-                (ws.cell(row=row, column=orientation_main_col).value if orientation_main_col else None)
-            )
-            comment = comment_tap(orientation_value)
-
-        # Tee
-        elif feature == "tee":
-            orientation_value = (
-                ws.cell(row=row, column=orientation_final_col).value
-                if orientation_final_col else
-                (ws.cell(row=row, column=orientation_main_col).value if orientation_main_col else None)
-            )
-            comment = comment_tee(orientation_value)
-
-        # Gain rule
-        elif feature_final == "gain":
-            if "attachment" in existing_comment_text.lower():
-                comment = existing_comment_text
-            else:
-                comment = str(feature_value).strip() if feature_value else ""
-
-        # GW proximity in separate column
-        if feature in {
-            "deformation",
-            "deformation - ovality",
-            "deformation w/ metal loss",
-            "manufacturing anomaly",
-            "metal loss",
-            "metal loss manufacturing",
-            "ncf-a",
-            "ncf-b",
-            "sswc",
-            "stopple",
-            "swa",
-        }:
-            if is_adjacent_to_girth_weld(
-                ws, row,
-                us_left_col,
-                ds_left_col,
-                us_right_col,
-                ds_right_col,
-            ):
-                gw_comment = "adjacent to girth weld"
-
-        ws.cell(row=row, column=comments_col).value = comment
-        ws.cell(row=row, column=gw_col).value = gw_comment
-
-    fill_column_green(ws, comments_col)
-    fill_column_green(ws, gw_col)
+    return ""
 
 
 # ---------------------------
@@ -599,6 +613,10 @@ def comment_tee(orientation_value: object) -> str:
         return "TEE at 270 degrees"
     return "TEE"
 
+
+# ---------------------------
+# GENERIC HELPERS
+# ---------------------------
 
 def format_one_decimal(value: object) -> str:
     if value is None:
@@ -684,11 +702,18 @@ def is_adjacent_to_girth_weld(ws, row: int, us_left_col, ds_left_col, us_right_c
     return False
 
 
-def append_adjacent_to_girth_weld(comment: str) -> str:
-    suffix = "adjacent to girth weld"
-    if suffix in comment.lower():
-        return comment
-    return f"{comment} {suffix}"
+def _round_to_zero_decimal(value: object) -> int | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    try:
+        return int(round(float(text)))
+    except (TypeError, ValueError):
+        return None
 
 
 def _to_float(value: object) -> float | None:
@@ -709,17 +734,3 @@ def _find_delta_column(headers: dict[str, int], candidates: list[str]) -> int | 
         if col is not None:
             return col
     return None
-
-
-def _round_to_zero_decimal(value: object) -> int | None:
-    if value is None:
-        return None
-
-    text = str(value).strip()
-    if not text:
-        return None
-
-    try:
-        return int(round(float(text)))
-    except (TypeError, ValueError):
-        return None

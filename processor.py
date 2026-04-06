@@ -1,163 +1,189 @@
 from __future__ import annotations
 
-import re
-from typing import Iterable, Optional
-
+from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import PatternFill
 
 
-LIGHT_GREEN_FILL = PatternFill(fill_type="solid", fgColor="C6EFCE")
+# ---------------------------
+# HEADER HANDLING
+# ---------------------------
 
-
-def normalize_header(value: object) -> str:
-    return str(value).strip().lower()
-
-
-def get_headers(ws) -> dict[str, int]:
-    headers: dict[str, int] = {}
+def get_headers(ws: Worksheet) -> dict[str, int]:
+    """
+    Returns a dictionary mapping:
+    normalized header name (lowercase, stripped) -> column index
+    """
+    headers = {}
     for col in range(1, ws.max_column + 1):
-        cell_value = ws.cell(row=1, column=col).value
-        if cell_value is None:
+        value = ws.cell(row=1, column=col).value
+        if value is None:
             continue
-        header = normalize_header(cell_value)
-        if header and header not in headers:
-            headers[header] = col
+        headers[str(value).strip().lower()] = col
     return headers
 
 
-def find_column(ws, header_name: str, headers: Optional[dict[str, int]] = None) -> Optional[int]:
-    local_headers = headers if headers is not None else get_headers(ws)
-    return local_headers.get(normalize_header(header_name))
+def ensure_column_after(ws: Worksheet, after_header: str, new_header: str, headers: dict[str, int]) -> None:
+    """
+    Inserts a column after a given header (if it doesn't already exist)
+    and sets the header name.
+    """
+    if new_header.strip().lower() in headers:
+        return
+
+    after_col = headers.get(after_header.strip().lower())
+    if after_col is None:
+        return
+
+    ws.insert_cols(after_col + 1)
+    ws.cell(row=1, column=after_col + 1).value = new_header
 
 
-def find_first_column(
-    ws,
-    header_names: Iterable[str],
-    headers: Optional[dict[str, int]] = None,
-) -> Optional[int]:
-    local_headers = headers if headers is not None else get_headers(ws)
-    for name in header_names:
-        col = local_headers.get(normalize_header(name))
+def find_first_column(ws: Worksheet, candidates: list[str], headers: dict[str, int]) -> int | None:
+    """
+    Finds the first matching column from a list of possible names.
+    """
+    for name in candidates:
+        col = headers.get(name.strip().lower())
         if col is not None:
             return col
     return None
 
 
-def ensure_column_after(
-    ws,
-    anchor_header: str,
-    new_header: str,
-    headers: Optional[dict[str, int]] = None,
-) -> int:
-    local_headers = headers if headers is not None else get_headers(ws)
+# ---------------------------
+# FORMATTING
+# ---------------------------
 
-    existing_col = local_headers.get(normalize_header(new_header))
-    if existing_col is not None:
-        return existing_col
+def fill_column_green(ws: Worksheet, col: int) -> None:
+    """
+    Applies light green fill to a column (header + all rows).
+    """
+    fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
 
-    anchor_col = local_headers.get(normalize_header(anchor_header))
-    if anchor_col is None:
-        raise ValueError(f'Column "{anchor_header}" not found.')
-
-    insert_at = anchor_col + 1
-    ws.insert_cols(insert_at)
-    ws.cell(row=1, column=insert_at).value = new_header
-    return insert_at
+    for row in range(1, ws.max_row + 1):
+        ws.cell(row=row, column=col).fill = fill
 
 
-def fill_column_green(ws, col: int) -> None:
-    max_row = ws.max_row
-    for row in range(1, max_row + 1):
-        ws.cell(row=row, column=col).fill = LIGHT_GREEN_FILL
+# ---------------------------
+# NORMALIZATION
+# ---------------------------
+
+def normalize_feature_type(value: object) -> str:
+    """
+    Normalizes feature type text for consistent comparisons.
+    """
+    if value is None:
+        return ""
+    return str(value).strip().lower()
 
 
 def parse_yes(value: object) -> bool:
-    return str(value).strip().lower() == "yes"
+    """
+    Returns True if value represents 'yes'.
+    """
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"yes", "y", "true", "1"}
 
 
-def clean_orientation(value: object) -> Optional[str]:
+def is_girth_weld(value: object) -> bool:
+    """
+    Checks if feature type is 'girth weld'.
+    """
+    return normalize_feature_type(value) == "girth weld"
+
+
+# ---------------------------
+# ORIENTATION HELPERS
+# ---------------------------
+
+def clean_orientation(value: object) -> str | None:
+    """
+    Cleans orientation values into HH:MM format.
+
+    Handles:
+    - decimal values (e.g. 0.5 -> 12:30)
+    - strings like '12:30'
+    - leading 00 -> converts to 12
+    """
     if value is None:
         return None
 
     text = str(value).strip()
-    if not text or ":" not in text:
-        return None
 
-    parts = text.split(":")
-    if len(parts) != 2:
-        return None
-
-    hour_text = parts[0].strip()
-    minute_text = parts[1].strip()
-
-    if not hour_text.isdigit() or not minute_text.isdigit():
-        return None
-
-    hour = int(hour_text)
-    minute = int(minute_text)
-
-    if hour < 0 or hour > 12:
-        return None
-    if minute < 0 or minute > 59:
-        return None
-
-    if hour == 0:
-        hour = 12
-
-    return f"{hour}:{minute:02d}"
-
-
-def orientation_to_degrees(orientation: object) -> Optional[int]:
-    cleaned = clean_orientation(orientation)
-    if not cleaned:
-        return None
-
-    hour_text, minute_text = cleaned.split(":")
-    hour = int(hour_text)
-    minute = int(minute_text)
-
-    if hour == 12:
-        hour = 0
-
-    degrees = (hour * 30) + (minute * 0.5)
-    return int(round(degrees))
-
-
-def get_depth_percent(value: object) -> Optional[float]:
-    if value is None:
-        return None
-
-    if isinstance(value, (int, float)):
-        numeric = float(value)
-        if numeric <= 1:
-            return numeric * 100
-        return numeric
-
-    text = str(value).strip()
     if not text:
         return None
 
-    text = text.replace("%", "").strip()
+    # Already in HH:MM
+    if ":" in text:
+        try:
+            h, m = text.split(":")
+            h = int(h)
+            m = int(m)
 
+            if h == 0:
+                h = 12
+
+            return f"{h:02d}:{m:02d}"
+        except:
+            return None
+
+    # Decimal conversion
     try:
-        numeric = float(text)
-    except ValueError:
+        val = float(text)
+
+        total_minutes = int(round(val * 60))
+        h = (total_minutes // 60) % 12
+        m = total_minutes % 60
+
+        if h == 0:
+            h = 12
+
+        return f"{h:02d}:{m:02d}"
+
+    except:
         return None
 
-    return numeric
+
+def orientation_to_degrees(value: str) -> int | None:
+    """
+    Converts HH:MM orientation to degrees (0–360).
+    Returns integer (0 decimals).
+    """
+    if not value:
+        return None
+
+    try:
+        h, m = map(int, value.split(":"))
+
+        if h == 12:
+            h = 0
+
+        total_minutes = h * 60 + m
+        degrees = (total_minutes / (12 * 60)) * 360
+
+        return int(round(degrees))
+
+    except:
+        return None
 
 
-def is_girth_weld(feature_type: object) -> bool:
-    return str(feature_type).strip().lower() == "girth weld"
+# ---------------------------
+# DEPTH
+# ---------------------------
 
+def get_depth_percent(value: object) -> float | None:
+    """
+    Safely parses depth percentage values.
+    """
+    if value is None:
+        return None
 
-def safe_str(value: object) -> str:
-    return "" if value is None else str(value).strip()
+    text = str(value).strip().replace("%", "")
 
+    if not text:
+        return None
 
-def normalize_feature_type(value: object) -> str:
-    return safe_str(value).lower()
-
-
-def normalize_for_match(value: object) -> str:
-    return re.sub(r"\s+", " ", safe_str(value).lower())
+    try:
+        return float(text)
+    except:
+        return None

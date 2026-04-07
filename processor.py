@@ -123,7 +123,7 @@ def clean_orientation(value: object) -> str | None:
             if h == 0:
                 h = 12
 
-            return f"{h:02d}:{m:02d}"
+            return f"{h}:{m:02d}"
         except:
             return None
 
@@ -138,7 +138,7 @@ def clean_orientation(value: object) -> str | None:
         if h == 0:
             h = 12
 
-        return f"{h:02d}:{m:02d}"
+        return f"{h}:{m:02d}"
 
     except:
         return None

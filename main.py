@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from openpyxl import load_workbook
-
 from clients.oneok import process_oneok_workbook
 
 
@@ -11,15 +10,26 @@ CLIENTS = {
     "ONEOK": process_oneok_workbook,
 }
 
+PIPE_DIAMETERS = [
+    "6.625",
+    "8.625",
+    "10.75",
+    "12.75",
+    "14.00",
+    "16.00",
+    "18.00",
+]
+
 
 class ExcelCleanerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Excel Cleaner")
-        self.root.geometry("650x240")
+        self.root.geometry("680x280")
         self.root.resizable(False, False)
 
         self.client_var = tk.StringVar(value="ONEOK")
+        self.pipe_diameter_var = tk.StringVar(value=PIPE_DIAMETERS[0])
         self.file_path_var = tk.StringVar()
 
         self._build_ui()
@@ -29,7 +39,6 @@ class ExcelCleanerApp:
         frame.pack(fill="both", expand=True)
 
         ttk.Label(frame, text="Client").grid(row=0, column=0, sticky="w", pady=(0, 10))
-
         self.client_combo = ttk.Combobox(
             frame,
             textvariable=self.client_var,
@@ -39,26 +48,35 @@ class ExcelCleanerApp:
         )
         self.client_combo.grid(row=0, column=1, sticky="ew", pady=(0, 10))
 
-        ttk.Label(frame, text="Excel File").grid(row=1, column=0, sticky="w", pady=(0, 10))
+        ttk.Label(frame, text="Pipe Diameter (in)").grid(row=1, column=0, sticky="w", pady=(0, 10))
+        self.pipe_diameter_combo = ttk.Combobox(
+            frame,
+            textvariable=self.pipe_diameter_var,
+            values=PIPE_DIAMETERS,
+            state="readonly",
+            width=40,
+        )
+        self.pipe_diameter_combo.grid(row=1, column=1, sticky="ew", pady=(0, 10))
 
+        ttk.Label(frame, text="Excel File").grid(row=2, column=0, sticky="w", pady=(0, 10))
         ttk.Entry(
             frame,
             textvariable=self.file_path_var,
             width=60,
-        ).grid(row=1, column=1, sticky="ew", pady=(0, 10))
+        ).grid(row=2, column=1, sticky="ew", pady=(0, 10))
 
         ttk.Button(frame, text="Browse...", command=self.browse_file).grid(
-            row=1, column=2, padx=(8, 0), pady=(0, 10)
+            row=2, column=2, padx=(8, 0), pady=(0, 10)
         )
 
         ttk.Button(frame, text="Process File", command=self.process_file).grid(
-            row=2, column=1, sticky="w", pady=(10, 0)
+            row=3, column=1, sticky="w", pady=(10, 0)
         )
 
         ttk.Label(
             frame,
             text="Output will be saved as a new processed file.",
-        ).grid(row=3, column=1, sticky="w", pady=(12, 0))
+        ).grid(row=4, column=1, sticky="w", pady=(12, 0))
 
         frame.columnconfigure(1, weight=1)
 
@@ -72,13 +90,13 @@ class ExcelCleanerApp:
                 ("All files", "*.*"),
             ],
         )
-
         if file_path:
             self.file_path_var.set(file_path)
 
     def process_file(self) -> None:
         file_path = self.file_path_var.get().strip()
         client_name = self.client_var.get().strip()
+        pipe_diameter = self.pipe_diameter_var.get().strip()
 
         if not file_path:
             messagebox.showwarning("Missing file", "Please select an Excel file.")
@@ -93,12 +111,18 @@ class ExcelCleanerApp:
             messagebox.showerror("Invalid client", f"Unknown client: {client_name}")
             return
 
+        if pipe_diameter not in PIPE_DIAMETERS:
+            messagebox.showerror("Invalid pipe diameter", "Please select a valid pipe diameter.")
+            return
+
         try:
             ext = os.path.splitext(file_path)[1].lower()
             keep_vba = ext in {".xlsm", ".xltm"}
 
             wb = load_workbook(file_path, keep_vba=keep_vba)
-            processor(wb)
+
+            # Pass pipe diameter into the client processor
+            processor(wb, pipe_diameter=float(pipe_diameter))
 
             output_path = self._build_output_path(file_path, client_name, ext)
             wb.save(output_path)

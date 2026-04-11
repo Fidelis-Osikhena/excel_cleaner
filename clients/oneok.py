@@ -17,7 +17,7 @@ from processor import (
 )
 
 
-def process_oneok_workbook(wb: Workbook) -> None:
+def process_oneok_workbook(wb: Workbook, pipe_diameter: float | None = None) -> None:
     ws = wb.active
 
     headers = _ensure_oneok_columns(ws)

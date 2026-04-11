@@ -132,8 +132,19 @@ class ExcelCleanerApp:
                 f"Processed file saved to:\n{output_path}",
             )
 
+
+        except PermissionError:
+            messagebox.showerror(
+                "File in Use",
+                "The Excel file is currently open.\n\n"
+                "Please close it and try again."
+            )    
+
         except Exception as exc:
-            messagebox.showerror("Processing error", str(exc))
+            messagebox.showerror(
+                "Processing error",
+                f"An unexpected error occurred:\n\n{str(exc)}"
+            )
 
     @staticmethod
     def _build_output_path(file_path: str, client_name: str, ext: str) -> str:

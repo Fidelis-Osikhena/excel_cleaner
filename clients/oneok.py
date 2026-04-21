@@ -86,6 +86,21 @@ def _ensure_oneok_columns(ws) -> dict[str, int]:
         ensure_column_after(ws, "Comments", "Comment Working 2 (GW Proximity)", headers)
         headers = get_headers(ws)
 
+    # Additional section comment columns
+    new_comment_columns = [
+        "COMMENT (Casing)",
+        "COMMENT (Marker Bands)",
+        "COMMENT (Recoat)",
+        "COMMENT (Sleeve)",
+    ]
+
+    anchor = "Comment Working 2 (GW Proximity)" if "comment working 2 (gw proximity)" in headers else "Comments"
+    for col_name in new_comment_columns:
+        if col_name.strip().lower() not in headers:
+            ensure_column_after(ws, anchor, col_name, headers)
+            headers = get_headers(ws)
+        anchor = col_name
+
     return get_headers(ws)
 
 
@@ -126,6 +141,10 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
     tool_technology_final_col = headers.get("tool technology final")
     comments_col = headers.get("comments")
     gw_proximity_col = headers.get("comment working 2 (gw proximity)")
+    casing_comment_col = headers.get("comment (casing)")
+    marker_bands_comment_col = headers.get("comment (marker bands)")
+    recoat_comment_col = headers.get("comment (recoat)")
+    sleeve_comment_col = headers.get("comment (sleeve)")
 
     # Delta columns
     weld_delta_main_col = _find_delta_column(headers, [
@@ -203,6 +222,32 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         "swa",
     }
 
+    section_comment_features = {
+        "deformation",
+        "deformation - ovality",
+        "deformation w/ metal loss",
+        "girth weld anomaly",
+        "weld anomaly",
+        "manufacturing anomaly",
+        "metal loss",
+        "metal loss cluster",
+        "metal loss manufacturing",
+        "metal loss manufacturing cluster",
+        "ncf-a",
+        "ncf-b",
+        "sswc",
+        "swa",
+        "swa cluster",
+        "swf-a",
+        "swf-b",
+    }
+
+    # Track whether current row is inside each begin/end section
+    casing_depth = 0
+    marker_band_depth = 0
+    recoat_depth = 0
+    sleeve_depth = 0
+
     # One pass across rows
     for row in range(2, max_row + 1):
         feature_value = ws.cell(row=row, column=feature_col).value
@@ -216,6 +261,8 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         existing_comment = ws.cell(row=row, column=comments_col).value if comments_col else None
         existing_comment_text = "" if existing_comment is None else str(existing_comment).strip()
 
+        source_depth_value = ws.cell(row=row, column=depth_col).value if depth_col else None
+
         # -------------------
         # Orientation block
         # -------------------
@@ -224,10 +271,19 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         long_seam_cleaned_val = ""
         long_seam_deg_val = ""
 
+        # Build Orientation Final from Orientation Main first
+        if orientation_main_col:
+            main_value = ws.cell(row=row, column=orientation_main_col).value
+            cleaned_main = clean_orientation(main_value)
+
+            if cleaned_main:
+                orientation_final_val = cleaned_main
+                deg = orientation_to_degrees(cleaned_main)
+                orientation_final_deg_val = "" if deg is None else deg
+
+        # Process Long Seam Orientation, preserving non-girth rows
         if long_seam_col and long_seam_deg_col:
             long_value = ws.cell(row=row, column=long_seam_col).value
-            cleaned_long = clean_orientation(long_value)
-
 
             # Fill down from the row above if blank
             if long_value is None or str(long_value).strip() == "":
@@ -299,8 +355,6 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         # -------------------
         # Depth outputs
         # -------------------
-        source_depth_value = ws.cell(row=row, column=depth_col).value if depth_col else None
-
         if depth_wt_col:
             depth_wt_value = source_depth_value if feature in depth_wt_features and source_depth_value is not None else ""
             ws.cell(row=row, column=depth_wt_col).value = depth_wt_value
@@ -310,34 +364,14 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
             ws.cell(row=row, column=depth_od_col).value = depth_od_value
 
         # -------------------
-        # Feature Type Final
-        # -------------------
-        feature_type_final_val = map_feature_type_final(
-            feature_value=feature_value,
-            is_marker_value=is_marker_value,
-            depth_value=source_depth_value,
-        )
-
-        # Override: Metal Object Touching + Attachment
-        if feature == "metal object - touching" and "attachment" in comment.lower():
-            feature_type_final_val = "LOCATION"
-
-        if feature_type_final_col:
-            ws.cell(row=row, column=feature_type_final_col).value = feature_type_final_val
-
-        # -------------------
-        # Tool Technology Final
-        # -------------------
-        tool_technology_final_val = map_tool_technology_final(feature, sensor_type)
-
-        if tool_technology_final_col:
-            ws.cell(row=row, column=tool_technology_final_col).value = tool_technology_final_val
-
-        # -------------------
         # Comments
         # -------------------
         comment = ""
         gw_comment = ""
+        casing_comment = ""
+        marker_bands_comment = ""
+        recoat_comment = ""
+        sleeve_comment = ""
 
         if feature in {
             "repair marker begin",
@@ -376,40 +410,25 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         }:
             comment = str(feature_value).strip() if feature_value else ""
 
-
-
-
-
         elif feature in {"deformation", "deformation - ovality", "deformation w/ metal loss"}:
-
             depth_percent = get_depth_percent(source_depth_value)
 
             if depth_percent is not None and pipe_diameter is not None:
-
                 depth_inches = (depth_percent / 100.0) * pipe_diameter
-
                 depth_inches_text = f"{depth_inches:.2f} inch"
 
                 if depth_percent >= 1.0:
-
                     if feature == "deformation w/ metal loss":
-
                         comment = f"Dent - {depth_inches_text}, w/ Possible Associated Metal Loss"
-
                     else:
-
                         comment = f"Dent - {depth_inches_text}"
-
                 else:
-
                     comment = f"Geometric Anomaly - {depth_inches_text}"
-
             else:
-
                 comment = "Deformation"
 
         elif feature == "manufacturing anomaly":
-            comment = "Manufacturing Anomaly"
+            comment = existing_comment_text
 
         elif feature in {"metal loss", "metal loss manufacturing", "swa"}:
             side = "External" if parse_yes(is_external_value) else "Internal"
@@ -435,12 +454,33 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         elif feature == "tee":
             comment = comment_tee(orientation_final_val)
 
-        elif feature_type_final_val.lower() == "gain":
-            if "attachment" in existing_comment_text.lower():
-                comment = existing_comment_text
-            else:
-                comment = str(feature_value).strip() if feature_value else ""
+        # -------------------
+        # Feature Type Final
+        # -------------------
+        feature_type_final_val = map_feature_type_final(
+            feature_value=feature_value,
+            is_marker_value=is_marker_value,
+            depth_value=source_depth_value,
+        )
 
+        # Override: Metal Object Touching + Attachment
+        if feature == "metal object - touching" and "attachment" in existing_comment_text.lower():
+            feature_type_final_val = "LOCATION"
+
+        if feature_type_final_col:
+            ws.cell(row=row, column=feature_type_final_col).value = feature_type_final_val
+
+        # -------------------
+        # Tool Technology Final
+        # -------------------
+        tool_technology_final_val = map_tool_technology_final(feature, sensor_type)
+
+        if tool_technology_final_col:
+            ws.cell(row=row, column=tool_technology_final_col).value = tool_technology_final_val
+
+        # -------------------
+        # GW proximity column
+        # -------------------
         if feature in gw_adjacent_features:
             if is_adjacent_to_girth_weld(
                 ws, row,
@@ -451,11 +491,57 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
             ):
                 gw_comment = "adjacent to girth weld"
 
+        # -------------------
+        # New section comment columns
+        # -------------------
+        if feature in section_comment_features:
+            if casing_depth > 0:
+                casing_comment = "feature appears in a Casing"
+            if marker_band_depth > 0:
+                marker_bands_comment = "between marker bands"
+            if recoat_depth > 0:
+                recoat_comment = "feature appears in area of recoat"
+            if sleeve_depth > 0:
+                sleeve_comment = "under sleeve"
+
         if comments_col:
             ws.cell(row=row, column=comments_col).value = comment
 
         if gw_proximity_col:
             ws.cell(row=row, column=gw_proximity_col).value = gw_comment
+
+        if casing_comment_col:
+            ws.cell(row=row, column=casing_comment_col).value = casing_comment
+
+        if marker_bands_comment_col:
+            ws.cell(row=row, column=marker_bands_comment_col).value = marker_bands_comment
+
+        if recoat_comment_col:
+            ws.cell(row=row, column=recoat_comment_col).value = recoat_comment
+
+        if sleeve_comment_col:
+            ws.cell(row=row, column=sleeve_comment_col).value = sleeve_comment
+
+        # Update begin/end state AFTER processing the row
+        if feature == "casing begin":
+            casing_depth += 1
+        elif feature == "casing end" and casing_depth > 0:
+            casing_depth -= 1
+
+        if feature == "marker band begin":
+            marker_band_depth += 1
+        elif feature == "marker band end" and marker_band_depth > 0:
+            marker_band_depth -= 1
+
+        if feature == "recoat begin":
+            recoat_depth += 1
+        elif feature == "recoat end" and recoat_depth > 0:
+            recoat_depth -= 1
+
+        if feature == "sleeve begin":
+            sleeve_depth += 1
+        elif feature == "sleeve end" and sleeve_depth > 0:
+            sleeve_depth -= 1
 
     # Highlight output columns once at the end
     for name in [
@@ -471,6 +557,10 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         "tool technology final",
         "comments",
         "comment working 2 (gw proximity)",
+        "comment (casing)",
+        "comment (marker bands)",
+        "comment (recoat)",
+        "comment (sleeve)",
     ]:
         col = headers.get(name)
         if col:

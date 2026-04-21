@@ -21,7 +21,8 @@ def process_oneok_workbook(wb: Workbook, pipe_diameter: float | None = None) -> 
     ws = wb.active
 
     headers = _ensure_oneok_columns(ws)
-    _process_oneok_single_pass(ws, headers)
+    _process_oneok_single_pass(ws, headers, pipe_diameter)
+    print("PIPE DIAMETER:", pipe_diameter)
 
 
 # ---------------------------
@@ -93,7 +94,7 @@ def _ensure_oneok_columns(ws) -> dict[str, int]:
 # SINGLE PASS
 # ---------------------------
 
-def _process_oneok_single_pass(ws, headers: dict[str, int]) -> None:
+def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float | None) -> None:
     max_row = ws.max_row
 
     # Source columns
@@ -224,23 +225,28 @@ def _process_oneok_single_pass(ws, headers: dict[str, int]) -> None:
         long_seam_cleaned_val = ""
         long_seam_deg_val = ""
 
-        if orientation_main_col and orientation_final_col:
-            cleaned_main = clean_orientation(ws.cell(row=row, column=orientation_main_col).value)
-
-            if cleaned_main:
-                orientation_final_val = cleaned_main
-                deg = orientation_to_degrees(cleaned_main)
-                orientation_final_deg_val = "" if deg is None else deg
-
         if long_seam_col and long_seam_deg_col:
-            if is_girth_weld(feature_value):
-                cleaned_long = clean_orientation(ws.cell(row=row, column=long_seam_col).value)
-                if cleaned_long:
-                    long_seam_cleaned_val = cleaned_long
-                    deg = orientation_to_degrees(cleaned_long)
-                    long_seam_deg_val = "" if deg is None else deg
+            long_value = ws.cell(row=row, column=long_seam_col).value
+            cleaned_long = clean_orientation(long_value)
 
-                    # Girth Weld override
+
+            # Fill down from the row above if blank
+            if long_value is None or str(long_value).strip() == "":
+                if row > 2:
+                    long_value = ws.cell(row=row - 1, column=long_seam_col).value
+
+            cleaned_long = clean_orientation(long_value)
+
+            if cleaned_long:
+                long_seam_cleaned_val = cleaned_long
+                deg = orientation_to_degrees(cleaned_long)
+                long_seam_deg_val = "" if deg is None else deg
+
+                # Write cleaned/fill-down value back into Long Seam Orientation
+                ws.cell(row=row, column=long_seam_col).value = cleaned_long
+
+                # ONLY override Orientation Final for Girth Weld
+                if is_girth_weld(feature_value):
                     orientation_final_val = cleaned_long
                     orientation_final_deg_val = long_seam_deg_val
             else:
@@ -313,6 +319,10 @@ def _process_oneok_single_pass(ws, headers: dict[str, int]) -> None:
             depth_value=source_depth_value,
         )
 
+        # Override: Metal Object Touching + Attachment
+        if feature == "metal object - touching" and "attachment" in comment.lower():
+            feature_type_final_val = "LOCATION"
+
         if feature_type_final_col:
             ws.cell(row=row, column=feature_type_final_col).value = feature_type_final_val
 
@@ -367,8 +377,37 @@ def _process_oneok_single_pass(ws, headers: dict[str, int]) -> None:
         }:
             comment = str(feature_value).strip() if feature_value else ""
 
+
+
+
+
         elif feature in {"deformation", "deformation - ovality", "deformation w/ metal loss"}:
-            comment = "Deformation"
+
+            depth_percent = get_depth_percent(source_depth_value)
+
+            if depth_percent is not None and pipe_diameter is not None:
+
+                depth_inches = (depth_percent / 100.0) * pipe_diameter
+
+                depth_inches_text = f"{depth_inches:.2f} inch"
+
+                if depth_percent >= 1.0:
+
+                    if feature == "deformation w/ metal loss":
+
+                        comment = f"Dent - {depth_inches_text}, w/ Possible Associated Metal Loss"
+
+                    else:
+
+                        comment = f"Dent - {depth_inches_text}"
+
+                else:
+
+                    comment = f"Geometric Anomaly - {depth_inches_text}"
+
+            else:
+
+                comment = "Deformation"
 
         elif feature == "manufacturing anomaly":
             comment = "Manufacturing Anomaly"
@@ -561,11 +600,41 @@ def map_tool_technology_final(feature: str, sensor: str) -> str:
 # COMMENT HELPERS
 # ---------------------------
 
+def get_depth_percent(value: object) -> float | None:
+    if value is None:
+        return None
+
+    text = str(value).strip().replace("%", "")
+    if not text:
+        return None
+
+    try:
+        num = float(text)
+    except (TypeError, ValueError):
+        return None
+
+    # Excel percent-style values often come through as decimals
+    # Example: 0.004 means 0.4%
+    if 0 < num < 1:
+        return num * 100
+
+    return num
+
+
 def comment_bend(radius_value: object, angle_value: object, orientation_value: object) -> str:
+    """
+    Bend comment format:
+    Bend - {radius 0.0}D - {angle 0.0}° - {up/right/down/left}
+    """
     radius = format_one_decimal(radius_value)
     angle = format_one_decimal(angle_value)
     direction_text = bend_orientation_to_direction(orientation_value)
-    return f"Bend - {radius} - {angle} - {direction_text}"
+
+    # Add D and degree symbol
+    radius_text = f"{radius}D" if radius else ""
+    angle_text = f"{angle}°" if angle else ""
+    
+    return f"Bend - {radius_text} - {angle_text} - {direction_text}"
 
 
 def comment_ncf(length_value: object, width_value: object) -> str:

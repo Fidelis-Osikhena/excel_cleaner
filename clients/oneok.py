@@ -22,7 +22,6 @@ def process_oneok_workbook(wb: Workbook, pipe_diameter: float | None = None) -> 
 
     headers = _ensure_oneok_columns(ws)
     _process_oneok_single_pass(ws, headers, pipe_diameter)
-    print("PIPE DIAMETER:", pipe_diameter)
 
 
 # ---------------------------

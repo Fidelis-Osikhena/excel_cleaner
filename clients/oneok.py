@@ -76,14 +76,12 @@ def _ensure_oneok_columns(ws) -> dict[str, int]:
         ensure_column_after(ws, "Feature Type", "Tool Technology Final", headers)
         headers = get_headers(ws)
 
-    if "comments" not in headers:
-        anchor = "Feature Type Final" if "feature type final" in headers else "Feature Type"
-        if anchor.lower() in headers:
-            ensure_column_after(ws, anchor, "Comments", headers)
-            headers = get_headers(ws)
+    if "comments" in headers and "comment working" not in headers:
+        ensure_column_after(ws, "Comments", "Comment Working", headers)
+        headers = get_headers(ws)
 
-    if "comments" in headers and "comment working 2 (gw proximity)" not in headers:
-        ensure_column_after(ws, "Comments", "Comment Working 2 (GW Proximity)", headers)
+    if "comment working" in headers and "comment working 2 (gw proximity)" not in headers:
+        ensure_column_after(ws, "Comment Working", "Comment Working 2 (GW Proximity)", headers)
         headers = get_headers(ws)
 
     # Additional section comment columns
@@ -139,7 +137,8 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
     depth_od_col = headers.get("depth (%od)")
     feature_type_final_col = headers.get("feature type final")
     tool_technology_final_col = headers.get("tool technology final")
-    comments_col = headers.get("comments")
+    comments_col = headers.get("comments")  # original source comments
+    comment_working_col = headers.get("comment working")  # generated comments
     gw_proximity_col = headers.get("comment working 2 (gw proximity)")
     casing_comment_col = headers.get("comment (casing)")
     marker_bands_comment_col = headers.get("comment (marker bands)")
@@ -193,11 +192,14 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
 
     depth_wt_features = {
         "metal loss",
+        "metal loss cluster",
+        "metal loss manufacturing cluster",
         "metal loss manufacturing",
         "ncf-a",
         "ncf-b",
         "sswc",
         "swa",
+        "swa cluster",
         "swf-a",
         "swf-b",
     }
@@ -214,12 +216,15 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         "deformation w/ metal loss",
         "manufacturing anomaly",
         "metal loss",
+        "metal loss cluster",
+        "metal loss manufacturing cluster",
         "metal loss manufacturing",
         "ncf-a",
         "ncf-b",
         "sswc",
         "stopple",
         "swa",
+        "swa cluster",
     }
 
     section_comment_features = {
@@ -430,7 +435,7 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         elif feature == "manufacturing anomaly":
             comment = existing_comment_text
 
-        elif feature in {"metal loss", "metal loss manufacturing", "swa"}:
+        elif feature in {"metal loss", "metal loss manufacturing", "swa", "metal loss manufacturing cluster", "metal loss cluster", "swa cluster"}:
             side = "External" if parse_yes(is_external_value) else "Internal"
             comment = f"Metal Loss - {side}"
 
@@ -504,8 +509,8 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
             if sleeve_depth > 0:
                 sleeve_comment = "under sleeve"
 
-        if comments_col:
-            ws.cell(row=row, column=comments_col).value = comment
+        if comment_working_col:
+            ws.cell(row=row, column=comment_working_col).value = comment
 
         if gw_proximity_col:
             ws.cell(row=row, column=gw_proximity_col).value = gw_comment
@@ -555,7 +560,7 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
         "depth (%od)",
         "feature type final",
         "tool technology final",
-        "comments",
+        "comment working",
         "comment working 2 (gw proximity)",
         "comment (casing)",
         "comment (marker bands)",
@@ -612,7 +617,7 @@ def map_feature_type_final(*, feature_value: object, is_marker_value: object, de
     if feature == "manufacturing anomaly":
         return "MILL ANOMALY"
 
-    if feature in {"metal loss", "metal loss manufacturing"}:
+    if feature in {"metal loss", "metal loss manufacturing", "metal loss manufacturing cluster", "metal loss cluster"}:
         return "GROUP"
 
     if feature in {"metal object - close", "metal object - touching"}:
@@ -637,7 +642,7 @@ def map_feature_type_final(*, feature_value: object, is_marker_value: object, de
             return "AGM" if parse_yes(is_marker_value) else "LOCATION"
         return "LOCATION"
 
-    if feature in {"sswc", "swa"}:
+    if feature in {"sswc", "swa", "swa cluster"}:
         return "SW GROUP"
 
     if feature == "swf-a":
@@ -668,7 +673,7 @@ def map_tool_technology_final(feature: str, sensor: str) -> str:
     if feature in {"ncf-a", "ncf-b"}:
         return "IDD-SM"
 
-    if feature in {"swa", "weld anomaly"}:
+    if feature in {"swa", "weld anomaly", "swa cluster"}:
         if sensor == "axial":
             return "AMFL"
         if sensor == "circumferential":
@@ -681,6 +686,12 @@ def map_tool_technology_final(feature: str, sensor: str) -> str:
             return "CMFL"
         if sensor == "geometry":
             return "Geometry"
+
+    if feature in {"metal loss", "metal loss cluster", "metal loss manufacturing cluster"}:
+        if sensor == "axial":
+            return "AMFL"
+        if sensor == "circumferential":
+            return "CMFL"
 
     return ""
 

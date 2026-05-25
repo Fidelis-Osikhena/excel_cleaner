@@ -4,6 +4,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from openpyxl import load_workbook
 from clients.oneok import process_oneok_workbook
+from dras_export import generate_dras_files
 
 
 CLIENTS = {
@@ -69,8 +70,20 @@ class ExcelCleanerApp:
             row=2, column=2, padx=(8, 0), pady=(0, 10)
         )
 
-        ttk.Button(frame, text="Process File", command=self.process_file).grid(
-            row=3, column=1, sticky="w", pady=(10, 0)
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=3, column=1, sticky="w", pady=(10, 0))
+
+        ttk.Button(
+            button_frame,
+            text="Process File",
+            command=self.process_file,
+        ).pack(side="left")
+
+        ttk.Button(
+            button_frame,
+            text="Generate DRAS Files",
+            command=self.generate_dras_files,
+        ).pack(side="left", padx=(10, 0)
         )
 
         ttk.Label(
@@ -144,6 +157,40 @@ class ExcelCleanerApp:
             messagebox.showerror(
                 "Processing error",
                 f"An unexpected error occurred:\n\n{str(exc)}"
+            )
+
+    def generate_dras_files(self) -> None:
+        file_path = self.file_path_var.get().strip()
+        pipe_diameter = self.pipe_diameter_var.get().strip()
+
+        if not file_path:
+            messagebox.showwarning("Missing file", "Please select an Excel file first.")
+            return
+
+        try:
+            output_folder = os.path.join(os.path.dirname(file_path), "DRAS_Output")
+
+            generate_dras_files(
+                excel_path=file_path,
+                output_folder=output_folder,
+                pipe_diameter=float(pipe_diameter),
+            )
+
+            messagebox.showinfo(
+                "Success",
+                f"DRAS files generated in:\n{output_folder}",
+            )
+
+        except PermissionError:
+            messagebox.showerror(
+                "File in Use",
+                "The Excel file appears to be open.\n\nPlease close it and try again.",
+            )
+
+        except Exception as exc:
+            messagebox.showerror(
+                "DRAS Export Error",
+                f"An error occurred while generating DRAS files:\n\n{str(exc)}",
             )
 
     @staticmethod

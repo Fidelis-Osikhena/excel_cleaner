@@ -91,6 +91,9 @@
    'C:\\Program '
    'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\\Lib\\dis.py',
    'PYMODULE'),
+  ('dras_export',
+   'C:\\Users\\Oddfr\\excel_cleaner\\dras_export.py',
+   'PYMODULE'),
   ('email',
    'C:\\Program '
    'Files\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_3.12.2800.0_x64__qbz5n2kfra8p0\\Lib\\email\\__init__.py',

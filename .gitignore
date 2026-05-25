@@ -1,1 +1,50 @@
-.venv/ 
+python -m venv .venv
+.venv\Scripts\activate
+4. Install packages
+pip install openpyxl pyinstaller
+5. Build the workbook logic in processor.py
+
+Put all your Excel rules here.
+
+Functions I’d suggest:
+
+process_workbook(path_in, path_out)
+fix_orientation_columns(ws)
+build_feature_type_final(ws)
+set_delta_columns(ws)
+
+That keeps the code organized.
+
+6. Build a simple GUI in main.py
+
+Use tkinter:
+
+one button to choose a file
+one button to process it
+success/error message box
+7. Test it as a normal Python app first
+
+Run:
+
+python main.py
+
+Do not package it yet. First make sure it processes a workbook correctly.
+
+8. Package it into an .exe
+
+PyInstaller’s basic command is pyinstaller myscript.py, and for a GUI app you generally want the windowed mode so no console opens.
+
+Use:pyinstaller --onefile --noconsole main.py
+
+Hey
+
+That will create:
+
+build\
+dist\
+a .spec file
+PyInstaller documents that it writes a spec file and build folder during packaging.
+
+Your executable will be in:
+
+dist\main.exe

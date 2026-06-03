@@ -34,7 +34,7 @@ Do not package it yet. First make sure it processes a workbook correctly.
 
 PyInstaller’s basic command is pyinstaller myscript.py, and for a GUI app you generally want the windowed mode so no console opens.
 
-Use:pyinstaller --onefile --noconsole main.py
+Use:pyinstaller --onefile --noconsole --name ExcelCleaner main.py
 
 Hey
 

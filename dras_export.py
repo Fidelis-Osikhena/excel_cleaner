@@ -43,7 +43,7 @@ def generate_dras_files(
     generate_crack_anomalies_txt(ws, output_folder, pipe_diameter)
     generate_facilities_txt(ws, output_folder)
     generate_other_anomalies_txt(ws, output_folder)
-    generate_bend_strain_txt(ws, output_folder)
+    generate_bend_strain_txt(output_folder)
 
 
 def generate_joint_txt(ws, output_folder: str, pipe_diameter: float) -> None:

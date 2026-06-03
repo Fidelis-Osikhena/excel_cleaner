@@ -43,7 +43,7 @@ def generate_dras_files(
     generate_crack_anomalies_txt(ws, output_folder, pipe_diameter)
     generate_facilities_txt(ws, output_folder)
     generate_other_anomalies_txt(ws, output_folder)
-    # generate_file_7(...)
+    generate_bend_strain_txt(ws, output_folder)
 
 
 def generate_joint_txt(ws, output_folder: str, pipe_diameter: float) -> None:
@@ -512,6 +512,62 @@ def generate_other_anomalies_txt(ws, output_folder: str) -> None:
             }
 
             writer.writerow(clean_output_row(output_row))
+
+
+BEND_STRAIN_OUTPUT_COLUMNS = [
+    "Feature Identifier",
+    "Odometer",
+    "Length",
+    "Type",
+    "Peak Strain Odometer",
+    "Strain Orientation",
+    "Total Strain",
+    "Horizontal Strain",
+    "Vertical Strain",
+    "Horizontal Strain at Peak Strain",
+    "Vertical Strain at Peak Strain",
+    "Strain Direction",
+    "Peak Strain Difference Odometer",
+    "Strain Difference Orientation",
+    "Max Total Strain Difference",
+    "Max Horizontal Strain Difference",
+    "Max Vertical Strain Difference",
+    "Horizontal Strain Difference at Peak Strain Change",
+    "Vertical Strain Difference at Peak Strain Change",
+    "Strain Change Direction",
+    "Max Total Pipeline Movement",
+    "Max Horizontal Pipeline Movement",
+    "Max Vertical Pipeline Movement",
+    "X_Coord",
+    "Y_Coord",
+    "Lat",
+    "Long",
+    "Elevation",
+    "Pitch",
+    "Yaw",
+    "Roll",
+    "Positive Value Direction",
+    "Comments",
+]
+
+
+def generate_bend_strain_txt(output_folder: str) -> None:
+    """
+    Placeholder until BendStrain requirements are finalized.
+    Creates BendStrain.txt with headers only.
+    """
+
+    output_path = os.path.join(output_folder, "BendStrain.txt")
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=BEND_STRAIN_OUTPUT_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+
+        writer.writeheader()
 
 
 # ---------------------------

@@ -32,30 +32,17 @@ def generate_dras_files(
     output_folder: str,
     pipe_diameter: float,
 ) -> None:
-    """
-    Main DRAS export function.
-
-    This is separate from ONEOK processing.
-    It reads the imported Excel file and creates DRAS .txt files.
-    """
-
     wb = load_workbook(excel_path, data_only=True)
     ws = wb.active
 
     os.makedirs(output_folder, exist_ok=True)
 
-    generate_joint_txt(
-        ws=ws,
-        output_folder=output_folder,
-        pipe_diameter=pipe_diameter,
-    )
-
-    # will add the other 6 files here:
-    # generate_file_2(...)
-    # generate_file_3(...)
-    # generate_file_4(...)
-    # generate_file_5(...)
-    # generate_file_6(...)
+    generate_joint_txt(ws, output_folder, pipe_diameter)
+    generate_cluster_txt(ws, output_folder, pipe_diameter)
+    generate_callbox_txt(ws, output_folder, pipe_diameter)
+    generate_crack_anomalies_txt(ws, output_folder, pipe_diameter)
+    generate_facilities_txt(ws, output_folder)
+    generate_other_anomalies_txt(ws, output_folder)
     # generate_file_7(...)
 
 
@@ -91,25 +78,452 @@ def generate_joint_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "Upstream Girth Weld Number": get_value(ws, row, headers, ["Weld Id", "Weld ID"]),
                 "Previous US Girth Weld Number": "",
                 "Odometer": get_value(ws, row, headers, ["Odometer Main (m)", "Odometer Main (ft)"]),
-                "X_Coord": get_value(ws, row, headers, ["Easting (m)", "Easting (ft)", "X Coord"]),
-                "Y_Coord": get_value(ws, row, headers, ["Northing (m)", "Northing (ft)", "Y Coord"]),
-                "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
-                "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
+                "X_Coord": get_value(ws, row, headers, ["Easting (m)", "Easting (ft)"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing (m)", "Northing (ft)"]),
+                "Lat": get_value(ws, row, headers, ["Latitude"]),
+                "Long": get_value(ws, row, headers, ["Longitude"]),
                 "Height": get_value(ws, row, headers, ["Height (m)", "Height (ft)"]),
-                "Wall Thickness": get_value(ws, row, headers, ["Effective Depth (%)", "Wall Thickness"]),
-                "Grade": get_value(ws, row, headers, ["SMYS (kPa)", "Grade"]),
+                "Wall Thickness": get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"]),
+                "Grade": get_value(ws, row, headers, ["SMYS (kPa)", "SMYS (psi)"]),
                 "Diameter": pipe_diameter,
                 "Seam Type": get_dras_seam_type(ws, row, headers),
                 "Seam Position": get_dras_seam_position(ws, row, headers),
                 "Comments": get_dras_joint_comment(ws, row, headers),
                 "MOP": get_mop_value(ws, row, headers),
                 "DPP": get_value(ws, row, headers, ["DPP"]),
-                "Tool Speed": get_value(ws, row, headers, ["Speed (m/s)", "Tool Speed"]),
+                "Tool Speed": get_value(ws, row, headers, ["Speed (m/s)", "Speed (ft/s)"]),
                 "Detectable Length": get_detectable_length(ws, row, headers),
             }
 
             writer.writerow(clean_output_row(output_row))
 
+
+CLUSTER_OUTPUT_COLUMNS = [
+    "PackageCode",
+    "ID",
+    "Number of Boxes in Cluster",
+    "Odometer",
+    "Azimuth",
+    "X_Coord",
+    "Y_Coord",
+    "Lat",
+    "Long",
+    "Height",
+    "Length",
+    "Width",
+    "Peak Depth",
+    "Effective Length",
+    "Effective Depth",
+    "Failure Pressure",
+    "FPR",
+    "FPRTC",
+    "RPR",
+    "Due Date",
+    "Status",
+    "Description",
+    "Surface",
+    "Metal Loss Type",
+    "Growth Rate",
+    "ERF",
+    "Depth Tolerance - @ 80% Conf.",
+    "Depth Tolerance - StdDev",
+    "Length Tolerance - @ 80% Conf.",
+    "Length Tolerance - StdDev",
+    "Width Tolerance - @ 80% Conf.",
+    "Width Tolerance - StdDev",
+]
+
+
+def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
+    headers = get_headers(ws)
+    output_path = os.path.join(output_folder, "Cluster.txt")
+
+    cluster_ids = []
+    for row in range(2, ws.max_row + 1):
+        if not is_flagged_row(ws, row, headers, ["Cluster"]):
+            continue
+        cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
+        if cluster_id not in ("", None):
+            cluster_ids.append(str(cluster_id).strip())
+
+    cluster_counts = {}
+    for cluster_id in cluster_ids:
+        cluster_counts[cluster_id] = cluster_counts.get(cluster_id, 0) + 1
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=CLUSTER_OUTPUT_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+
+        for row in range(2, ws.max_row + 1):
+            cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
+            if cluster_id in ("", None):
+                continue
+
+            cluster_id_text = str(cluster_id).strip()
+
+            maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)"])
+            mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)"])
+            smys = get_value(ws, row, headers, ["SMYS (kPa)", "SMYS (psi)"])
+            mb31g = get_value(ws, row, headers, ["MB31G (kPa)", "MB31G (psi)"])
+            wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"])
+            outside_diameter = pipe_diameter
+
+            fpr = calc_fpr(mb31g, maop)
+            fprtc = calc_fprtc(mb31g, smys, wall_thickness, outside_diameter)
+            rpr = calc_rpr(maop, mop, mb31g)
+
+            output_row = {
+                "PackageCode": "",
+                "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
+                "Number of Boxes in Cluster": cluster_counts.get(cluster_id_text, 1),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main (m)", "Odometer Main (ft)"]),
+                "Azimuth": get_value(ws, row, headers, ["Orientation Center"]),
+                "X_Coord": get_value(ws, row, headers, ["Easting (m)", "Easting (ft)"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing (m)", "Northing (ft)"]),
+                "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
+                "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
+                "Height": get_value(ws, row, headers, ["Height (m)", "Height (ft)"]),
+                "Length": get_value(ws, row, headers, ["Length (mm)", "Length (in)"]),
+                "Width": get_value(ws, row, headers, ["Width(mm)", "Width (in)"]),
+                "Peak Depth": get_value(ws, row, headers, ["Depth (%)"]),
+                "Effective Length": get_value(ws, row, headers, ["Effective Length (mm)", "Effective Length (in)"]),
+                "Effective Depth": get_value(ws, row, headers, ["Effective Depth (%)"]),
+                "Failure Pressure": mb31g,
+                "FPR": fpr,
+                "FPRTC": fprtc,
+                "RPR": rpr,
+                "Due Date": "",
+                "Status": "",
+                "Description": get_dras_description(ws, row, headers),
+                "Surface": get_surface(ws, row, headers),
+                "Metal Loss Type": "",
+                "Growth Rate": "",
+                "ERF": "",
+                "Depth Tolerance - @ 80% Conf.": "",
+                "Depth Tolerance - StdDev": "",
+                "Length Tolerance - @ 80% Conf.": "",
+                "Length Tolerance - StdDev": "",
+                "Width Tolerance - @ 80% Conf.": "",
+                "Width Tolerance - StdDev": "",
+            }
+
+            writer.writerow(clean_output_row(output_row))
+
+CALLBOX_OUTPUT_COLUMNS = [
+    "PackageCode",
+    "ID",
+    "Cluster ID",
+    "Odometer",
+    "Azimuth",
+    "X_Coord",
+    "Y_Coord",
+    "Lat",
+    "Long",
+    "Height",
+    "Length",
+    "Width",
+    "Peak Depth",
+    "Failure Pressure",
+    "FPR",
+    "FPRTC",
+    "RPR",
+    "Manual Analysis Flag",
+    "Surface",
+    "Metal Loss Type",
+    "Growth Rate",
+    "Discovery Date",
+    "ERF",
+    "Depth Tolerance - @ 80% Conf.",
+    "Depth Tolerance - StdDev",
+    "Length Tolerance - @ 80% Conf.",
+    "Length Tolerance - StdDev",
+    "Width Tolerance - @ 80% Conf.",
+    "Width Tolerance - StdDev",
+]
+
+
+def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
+    headers = get_headers(ws)
+    output_path = os.path.join(output_folder, "Callbox.txt")
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=CALLBOX_OUTPUT_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+
+        for row in range(2, ws.max_row + 1):
+            if not is_flagged_row(ws, row, headers, ["Callbox", "Call Box"]):
+                continue
+            feature_id = get_value(ws, row, headers, ["Feature ID", "Feature Id"])
+            if feature_id in ("", None):
+                continue
+
+            maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)"])
+            mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)"])
+            smys = get_value(ws, row, headers, ["SMYS (kPa)", "SMYS (psi)"])
+            mb31g = get_value(ws, row, headers, ["MB31G (kpa)", "MB31G (psi)"])
+            wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"])
+
+            output_row = {
+                "PackageCode": "",
+                "ID": feature_id,
+                "Cluster ID": get_callbox_cluster_id(ws, row, headers),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)"]),
+                "Azimuth": get_callbox_azimuth(ws, row, headers),
+                "X_Coord": get_value(ws, row, headers, ["Easting (ft)", "Easting (m)"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing (ft)", "Northing (m)"]),
+                "Lat": get_value(ws, row, headers, ["Latitude"]),
+                "Long": get_value(ws, row, headers, ["Longitude"]),
+                "Height": get_value(ws, row, headers, ["Height (ft)", "Height (m)"]),
+                "Length": get_value(ws, row, headers, ["Length (mm)", "Length (in)"]),
+                "Width": get_value(ws, row, headers, ["Width (mm)", "Width (in)"]),
+                "Peak Depth": get_value(ws, row, headers, ["Depth (%)", "Peak Depth"]),
+                "Failure Pressure": mb31g,
+                "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
+                "FPRTC": "",
+                "RPR": calc_fprtc(mb31g, smys, wall_thickness, pipe_diameter),
+                "Manual Analysis Flag": "",
+                "Surface": get_surface(ws, row, headers),
+                "Metal Loss Type": "",
+                "Growth Rate": "",
+                "Discovery Date": "",
+                "ERF": calc_erf(maop, mop, mb31g),
+                "Depth Tolerance - @ 80% Conf.": "",
+                "Depth Tolerance - StdDev": "",
+                "Length Tolerance - @ 80% Conf.": "",
+                "Length Tolerance - StdDev": "",
+                "Width Tolerance - @ 80% Conf.": "",
+                "Width Tolerance - StdDev": "",
+            }
+
+            writer.writerow(clean_output_row(output_row))
+
+
+CRACK_ANOMALIES_OUTPUT_COLUMNS = [
+    "PackageCode",
+    "ID",
+    "Odometer",
+    "Azimuth",
+    "X_Coord",
+    "Y_Coord",
+    "Lat",
+    "Long",
+    "Height",
+    "Length",
+    "Largest Individual Indication",
+    "Width",
+    "DepthPercent",
+    "DepthPercentLD",
+    "DepthPercentText",
+    "Failure Pressure",
+    "FPR",
+    "FPRTC",
+    "RPR",
+    "Relative Position",
+    "Type",
+    "Description",
+    "Surface",
+    "POE",
+    "Due Date",
+    "Status",
+    "Growth Rate Depth",
+    "Growth Rate Length",
+    "Discovery Date",
+    "ESF",
+    "Depth Tolerance - @ 80% Conf.",
+    "Depth Tolerance - StdDev",
+    "Length Tolerance - @ 80% Conf.",
+    "Length Tolerance - StdDev",
+    "Width Tolerance - @ 80% Conf.",
+    "Width Tolerance - StdDev",
+]
+
+
+def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -> None:
+    headers = get_headers(ws)
+    output_path = os.path.join(output_folder, "CrackAnomalies.txt")
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=CRACK_ANOMALIES_OUTPUT_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+
+        for row in range(2, ws.max_row + 1):
+            if not is_flagged_row(ws, row, headers, ["CrackAnomalies", "Crack Anomalies"]):
+                continue
+
+            maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)"])
+            mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)"])
+            smys = get_value(ws, row, headers, ["SMYS (kPa)", "SMYS (psi)"])
+            mb31g = get_value(ws, row, headers, ["MB31G", "MB31G (kpa)", "MB31G (psi)"])
+            wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"])
+
+            output_row = {
+                "PackageCode": "",
+                "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)"]),
+                "Azimuth": get_callbox_azimuth(ws, row, headers),
+                "X_Coord": get_value(ws, row, headers, ["Easting (ft)", "Easting (m)"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing (ft)", "Northing (m)"]),
+                "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
+                "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
+                "Height": get_value(ws, row, headers, ["Height (ft)", "Height (m)"]),
+                "Length": get_value(ws, row, headers, ["Length (in)", "Length (mm)", "Length"]),
+                "Largest Individual Indication": get_largest_individual_indication(ws, row, headers),
+                "Width": get_value(ws, row, headers, ["Width (in)", "Width (mm)", "Width"]),
+                "DepthPercent": get_value(ws, row, headers, ["Depth (%)", "DepthPercent"]),
+                "DepthPercentLD": "",
+                "DepthPercentText": "",
+                "Failure Pressure": mb31g,
+                "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
+                "FPRTC": calc_fprtc(mb31g, smys, wall_thickness, pipe_diameter),
+                "RPR": calc_rpr(maop, mop, mb31g),
+                "Relative Position": "",
+                "Type": "",
+                "Description": get_dras_description(ws, row, headers),
+                "Surface": get_surface(ws, row, headers),
+                "POE": "",
+                "Due Date": "",
+                "Status": "",
+                "Growth Rate Depth": "",
+                "Growth Rate Length": "",
+                "Discovery Date": "",
+                "ESF": "",
+                "Depth Tolerance - @ 80% Conf.": "",
+                "Depth Tolerance - StdDev": "",
+                "Length Tolerance - @ 80% Conf.": "",
+                "Length Tolerance - StdDev": "",
+                "Width Tolerance - @ 80% Conf.": "",
+                "Width Tolerance - StdDev": "",
+            }
+
+            writer.writerow(clean_output_row(output_row))
+
+FACILITIES_OUTPUT_COLUMNS = [
+    "ID",
+    "Odometer",
+    "X_Coord",
+    "Y_Coord",
+    "Lat",
+    "Long",
+    "Height",
+    "Tool Speed",
+    "Description",
+]
+def generate_facilities_txt(ws, output_folder: str) -> None:
+    headers = get_headers(ws)
+    output_path = os.path.join(output_folder, "Facilities.txt")
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=FACILITIES_OUTPUT_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+
+        for row in range(2, ws.max_row + 1):
+            if not is_flagged_row(ws, row, headers, ["Facilities"]):
+                continue
+
+            output_row = {
+                "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main", "Odometer Main (m)", "Odometer"]),
+                "X_Coord": get_value(ws, row, headers, ["Easting", "Easting (m)"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing", "Northing (m)"]),
+                "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
+                "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
+                "Height": get_value(ws, row, headers, ["Height", "Height (m)"]),
+                "Tool Speed": get_value(ws, row, headers, ["Speed", "Tool Speed"]),
+                "Description": get_facilities_description(ws, row, headers),
+            }
+
+            writer.writerow(clean_output_row(output_row))
+
+
+OTHER_ANOMALIES_OUTPUT_COLUMNS = [
+    "PackageCode", "ID", "Odometer", "Azimuth", "X_Coord", "Y_Coord",
+    "Lat", "Long", "Height", "Length", "Width", "Depth (Geometric)",
+    "Depth (Volumetric)", "Strain", "Status", "Description", "Surface",
+    "Discovery Date", "Hardness", "Depth Tolerance - @ 80% Conf.",
+    "Depth Tolerance - StdDev", "Length Tolerance - @ 80% Conf.",
+    "Length Tolerance - StdDev", "Width Tolerance - @ 80% Conf.",
+    "Width Tolerance - StdDev",
+]
+
+
+def generate_other_anomalies_txt(ws, output_folder: str) -> None:
+    headers = get_headers(ws)
+    output_path = os.path.join(output_folder, "OtherAnomalies.txt")
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=OTHER_ANOMALIES_OUTPUT_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+        writer.writeheader()
+
+        for row in range(2, ws.max_row + 1):
+            if not is_flagged_row(ws, row, headers, ["OtherAnomalies", "Other Anomalies"]):
+                continue
+
+            output_row = {
+                "PackageCode": "",
+                "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main", "Odometer Main (m)"]),
+                "Azimuth": get_callbox_azimuth(ws, row, headers),
+                "X_Coord": get_value(ws, row, headers, ["Easting (ft)", "Easting (m)"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing (ft)", "Northing (m)"]),
+                "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
+                "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
+                "Height": get_value(ws, row, headers, ["Height", "Height (m)"]),
+                "Length": get_value(ws, row, headers, ["Length (mm)", "Length (in)", "Length"]),
+                "Width": get_value(ws, row, headers, ["Width (mm)", "Width (in)", "Width"]),
+                "Depth (Geometric)": get_value(ws, row, headers, ["Depth (%)"]),
+                "Depth (Volumetric)": get_value(ws, row, headers, ["Depth (%)"]),
+                "Strain": "",
+                "Status": "",
+                "Description": get_dras_description(ws, row, headers),
+                "Surface": get_surface(ws, row, headers),
+                "Discovery Date": "",
+                "Hardness": "",
+                "Depth Tolerance - @ 80% Conf.": "",
+                "Depth Tolerance - StdDev": "",
+                "Length Tolerance - @ 80% Conf.": "",
+                "Length Tolerance - StdDev": "",
+                "Width Tolerance - @ 80% Conf.": "",
+                "Width Tolerance - StdDev": "",
+            }
+
+            writer.writerow(clean_output_row(output_row))
+
+
+# ---------------------------
+# FACILITIES.TXT RULE HELPERS
+# ---------------------------
+
+def get_facilities_description(ws, row: int, headers: dict[str, int]) -> str:
+    feature_type = safe_str(get_value(ws, row, headers, ["Feature Type"]))
+    comment = safe_str(get_value(ws, row, headers, ["Comment Working", "Comments"]))
+    orientation = safe_str(get_value(ws, row, headers, ["Orientation Final", "Orientation Center", "Orientation Main"]))
+
+    return " - ".join(part for part in [feature_type, comment, orientation] if part)
 
 # ---------------------------
 # JOINT.TXT RULE HELPERS
@@ -183,8 +597,8 @@ def get_mop_value(ws, row: int, headers: dict[str, int]) -> str:
     use MAOP or MOP, whichever is not blank.
     """
 
-    maop = get_value(ws, row, headers, ["MAOP (kPa)"])
-    mop = get_value(ws, row, headers, ["MOP (kPa)"])
+    maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)"])
+    mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)"])
 
     if maop not in ("", None):
         return maop
@@ -202,7 +616,7 @@ def get_detectable_length(ws, row: int, headers: dict[str, int]) -> str:
     If speed >= 6 m/s, return blank.
     """
 
-    speed_value = get_value(ws, row, headers, ["Speed (m/s)", "Tool Speed"])
+    speed_value = get_value(ws, row, headers, ["Speed (m/s)", "Speed (ft/s)"])
     speed = to_float(speed_value)
 
     if speed is None:
@@ -213,6 +627,126 @@ def get_detectable_length(ws, row: int, headers: dict[str, int]) -> str:
 
     return ""
 
+# ---------------------------
+# Cluster.TXT RULE HELPERS
+# ---------------------------
+
+def get_dras_description(ws, row: int, headers: dict[str, int]) -> str:
+    feature = safe_str(get_value(ws, row, headers, ["Feature Type"]))
+    comment = safe_str(get_value(ws, row, headers, ["Comment Working", "Comments"]))
+
+    if feature and comment:
+        return f"{feature} - {comment}"
+    if feature:
+        return feature
+    return comment
+
+
+def get_surface(ws, row: int, headers: dict[str, int]) -> str:
+    is_external = get_value(ws, row, headers, ["Is External", "IsExternal"])
+    return "E" if str(is_external).strip().lower() == "yes" else "I"
+
+
+def calc_fpr(mb31g, maop):
+    mb31g_num = to_float(mb31g)
+    maop_num = to_float(maop)
+
+    if mb31g_num is None or maop_num in (None, 0):
+        return ""
+
+    return round(mb31g_num / maop_num, 3)
+
+
+def calc_fprtc(mb31g, smys, wall_thickness, outside_diameter):
+    mb31g_num = to_float(mb31g)
+    smys_num = to_float(smys)
+    wt_num = to_float(wall_thickness)
+    od_num = to_float(outside_diameter)
+
+    if None in (mb31g_num, smys_num, wt_num, od_num):
+        return ""
+
+    denominator = 2 * wt_num / od_num
+    if denominator == 0:
+        return ""
+
+    return (mb31g_num / smys_num) / denominator
+
+
+def calc_rpr(maop, mop, mb31g):
+    pressure = to_float(maop)
+    if pressure is None:
+        pressure = to_float(mop)
+
+    mb31g_num = to_float(mb31g)
+
+    if pressure is None or mb31g_num in (None, 0):
+        return ""
+
+    return round(pressure / (0.72 * mb31g_num), 3)
+
+
+# ---------------------------
+# CALLBOX HELPERS
+# ---------------------------
+
+def get_callbox_cluster_id(ws, row: int, headers: dict[str, int]) -> str:
+    cluster = get_value(ws, row, headers, ["Cluster", "Cluster ID", "Cluster Id"])
+    if cluster not in ("", None):
+        return cluster
+
+    return get_value(ws, row, headers, ["Feature ID", "Feature Id"])
+
+
+def get_callbox_azimuth(ws, row: int, headers: dict[str, int]) -> str:
+    degree_value = get_value(ws, row, headers, ["Orientation Center (Degree)", "Orientation Center Degree"])
+    if degree_value not in ("", None):
+        return format_integer_if_possible(degree_value)
+
+    orientation_value = get_value(ws, row, headers, ["Orientation Center"])
+    degrees = clock_orientation_to_degrees(orientation_value)
+
+    return "" if degrees is None else str(degrees)
+
+
+def calc_fpr_choose_pressure(mb31g, maop, mop):
+    mb31g_num = to_float(mb31g)
+    maop_num = to_float(maop)
+    mop_num = to_float(mop)
+
+    pressure = maop_num if maop_num not in (None, 0) else mop_num
+
+    if mb31g_num is None or pressure in (None, 0):
+        return ""
+
+    return round(mb31g_num / pressure, 3)
+
+
+def calc_erf(maop, mop, mb31g):
+    pressure = to_float(maop)
+    if pressure is None:
+        pressure = to_float(mop)
+
+    mb31g_num = to_float(mb31g)
+
+    if pressure is None or mb31g_num in (None, 0):
+        return ""
+
+    return round(pressure / (0.72 * mb31g_num), 3)
+
+# ---------------------------
+# CRACK ANOMALY HELPERS
+# ---------------------------
+def get_largest_individual_indication(ws, row: int, headers: dict[str, int]) -> str:
+    feature_type = normalize_text(get_value(ws, row, headers, ["Feature Type"]))
+
+    if feature_type == "ncf-a" or feature_type == "ncf-b":
+        return get_value(ws, row, headers, ["Width (in)", "Width (mm)", "Width"])
+
+    if feature_type == "swf-a" or feature_type == "swf-b":
+        return get_value(ws, row, headers, ["Length (in)", "Length (mm)", "Length"])
+
+    return ""
 
 # ---------------------------
 # GENERIC HELPERS
@@ -348,3 +882,7 @@ def clean_output_row(row: dict[str, object]) -> dict[str, str]:
             cleaned[key] = str(value).strip()
 
     return cleaned
+
+def is_flagged_row(ws, row: int, headers: dict[str, int], flag_headers: list[str]) -> bool:
+    value = get_value(ws, row, headers, flag_headers)
+    return str(value).strip().lower() in {"1", "1.0", "yes", "y", "true"}

@@ -29,7 +29,7 @@ class ExcelCleanerApp:
         self.root.geometry("680x280")
         self.root.resizable(False, False)
 
-        self.client_var = tk.StringVar(value="ONEOK")
+        self.client_var = tk.StringVar(value="")
         self.pipe_diameter_var = tk.StringVar(value=PIPE_DIAMETERS[0])
         self.file_path_var = tk.StringVar()
 
@@ -43,7 +43,7 @@ class ExcelCleanerApp:
         self.client_combo = ttk.Combobox(
             frame,
             textvariable=self.client_var,
-            values=list(CLIENTS.keys()),
+            values=[""] + list(CLIENTS.keys()),
             state="readonly",
             width=40,
         )
@@ -109,6 +109,12 @@ class ExcelCleanerApp:
     def process_file(self) -> None:
         file_path = self.file_path_var.get().strip()
         client_name = self.client_var.get().strip()
+        if not client_name:
+            messagebox.showerror(
+                "Missing client",
+                "Please select a client before processing the file."
+            )
+            return
         pipe_diameter = self.pipe_diameter_var.get().strip()
 
         if not file_path:

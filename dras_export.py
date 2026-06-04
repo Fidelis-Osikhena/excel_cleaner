@@ -44,6 +44,7 @@ def generate_dras_files(
     generate_facilities_txt(ws, output_folder)
     generate_other_anomalies_txt(ws, output_folder)
     generate_bend_strain_txt(output_folder)
+    generate_inline_inspection_txt(output_folder)
 
 
 def generate_joint_txt(ws, output_folder: str, pipe_diameter: float) -> None:
@@ -140,8 +141,6 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
 
     cluster_ids = []
     for row in range(2, ws.max_row + 1):
-        if not is_flagged_row(ws, row, headers, ["Cluster"]):
-            continue
         cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
         if cluster_id not in ("", None):
             cluster_ids.append(str(cluster_id).strip())
@@ -160,6 +159,8 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
         writer.writeheader()
 
         for row in range(2, ws.max_row + 1):
+            if not is_flagged_row(ws, row, headers, ["Cluster"]):
+                continue
             cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
             if cluster_id in ("", None):
                 continue
@@ -174,8 +175,7 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
             outside_diameter = pipe_diameter
 
             fpr = calc_fpr(mb31g, maop)
-            fprtc = calc_fprtc(mb31g, smys, wall_thickness, outside_diameter)
-            rpr = calc_rpr(maop, mop, mb31g)
+            rpr = calc_rpr(mb31g, smys, wall_thickness, pipe_diameter)
 
             output_row = {
                 "PackageCode": "",
@@ -195,7 +195,7 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "Effective Depth": get_value(ws, row, headers, ["Effective Depth (%)"]),
                 "Failure Pressure": mb31g,
                 "FPR": fpr,
-                "FPRTC": fprtc,
+                "FPRTC": "",
                 "RPR": rpr,
                 "Due Date": "",
                 "Status": "",
@@ -290,7 +290,7 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "Failure Pressure": mb31g,
                 "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
                 "FPRTC": "",
-                "RPR": calc_fprtc(mb31g, smys, wall_thickness, pipe_diameter),
+                "RPR": calc_rpr(mb31g, smys, wall_thickness, pipe_diameter),
                 "Manual Analysis Flag": "",
                 "Surface": get_surface(ws, row, headers),
                 "Metal Loss Type": "",
@@ -389,8 +389,8 @@ def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -
                 "DepthPercentText": "",
                 "Failure Pressure": mb31g,
                 "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
-                "FPRTC": calc_fprtc(mb31g, smys, wall_thickness, pipe_diameter),
-                "RPR": calc_rpr(maop, mop, mb31g),
+                "FPRTC": "",
+                "RPR": calc_rpr(mb31g, smys, wall_thickness, pipe_diameter),
                 "Relative Position": "",
                 "Type": "",
                 "Description": get_dras_description(ws, row, headers),
@@ -448,7 +448,7 @@ def generate_facilities_txt(ws, output_folder: str) -> None:
                 "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
                 "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
                 "Height": get_value(ws, row, headers, ["Height", "Height (m)"]),
-                "Tool Speed": get_value(ws, row, headers, ["Speed", "Tool Speed"]),
+                "Tool Speed": get_value(ws, row, headers, ["Speed (m/s)", "Speed (ft/s)"]),
                 "Description": get_facilities_description(ws, row, headers),
             }
 
@@ -483,6 +483,9 @@ def generate_other_anomalies_txt(ws, output_folder: str) -> None:
             if not is_flagged_row(ws, row, headers, ["OtherAnomalies", "Other Anomalies"]):
                 continue
 
+            feature_type = normalize_text(get_value(ws, row, headers, ["Feature Type"]))
+            depth_value = get_value(ws, row, headers, ["Depth (%)"])
+
             output_row = {
                 "PackageCode": "",
                 "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
@@ -495,8 +498,8 @@ def generate_other_anomalies_txt(ws, output_folder: str) -> None:
                 "Height": get_value(ws, row, headers, ["Height", "Height (m)"]),
                 "Length": get_value(ws, row, headers, ["Length (mm)", "Length (in)", "Length"]),
                 "Width": get_value(ws, row, headers, ["Width (mm)", "Width (in)", "Width"]),
-                "Depth (Geometric)": get_value(ws, row, headers, ["Depth (%)"]),
-                "Depth (Volumetric)": get_value(ws, row, headers, ["Depth (%)"]),
+                "Depth (Geometric)": depth_value if feature_type == "deformation" else "",
+                "Depth (Volumetric)": "" if feature_type == "deformation" else depth_value,
                 "Strain": "",
                 "Status": "",
                 "Description": get_dras_description(ws, row, headers),
@@ -563,6 +566,44 @@ def generate_bend_strain_txt(output_folder: str) -> None:
         writer = csv.DictWriter(
             f,
             fieldnames=BEND_STRAIN_OUTPUT_COLUMNS,
+            delimiter="\t",
+            lineterminator="\n",
+        )
+
+        writer.writeheader()
+
+
+
+INLINE_INSPECTION_OUTPUT_COLUMNS = [
+    "Name",
+    "Description",
+    "Vendor Company",
+    "Start Date Tool 1",
+    "End Date Tool 1",
+    "Start Date Tool 2",
+    "End Date Tool 2",
+    "Report Date",
+    "Start Odometer",
+    "End Odometer",
+    "Inspection Type",
+    "Call Box Interaction Rule",
+    "Rupture Pressure Algorithm",
+    "Coordinate Projection",
+    "Coordinate Datum",
+    "Height Datum",
+    "Status",
+    "Measured From",
+    "System of Measurement",
+    "SpecVersion",
+]
+
+def generate_inline_inspection_txt(output_folder: str) -> None:
+    output_path = os.path.join(output_folder, "InlineInspection.txt")
+
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=INLINE_INSPECTION_OUTPUT_COLUMNS,
             delimiter="\t",
             lineterminator="\n",
         )
@@ -700,7 +741,19 @@ def get_dras_description(ws, row: int, headers: dict[str, int]) -> str:
 
 def get_surface(ws, row: int, headers: dict[str, int]) -> str:
     is_external = get_value(ws, row, headers, ["Is External", "IsExternal"])
-    return "E" if str(is_external).strip().lower() == "yes" else "I"
+
+    if is_external in ("", None):
+        return ""
+
+    text = str(is_external).strip().lower()
+
+    if text in {"yes", "y", "true", "1"}:
+        return "E"
+
+    if text in {"no", "n", "false", "0"}:
+        return "I"
+
+    return ""
 
 
 def calc_fpr(mb31g, maop):
@@ -712,34 +765,19 @@ def calc_fpr(mb31g, maop):
 
     return round(mb31g_num / maop_num, 3)
 
-
-def calc_fprtc(mb31g, smys, wall_thickness, outside_diameter):
+def calc_rpr(mb31g, smys, wall_thickness, pipe_diameter):
     mb31g_num = to_float(mb31g)
     smys_num = to_float(smys)
     wt_num = to_float(wall_thickness)
-    od_num = to_float(outside_diameter)
+    diameter_num = to_float(pipe_diameter)
 
-    if None in (mb31g_num, smys_num, wt_num, od_num):
+    if None in (mb31g_num, smys_num, wt_num, diameter_num):
         return ""
 
-    denominator = 2 * wt_num / od_num
-    if denominator == 0:
+    if smys_num == 0 or wt_num == 0 or diameter_num == 0:
         return ""
 
-    return (mb31g_num / smys_num) / denominator
-
-
-def calc_rpr(maop, mop, mb31g):
-    pressure = to_float(maop)
-    if pressure is None:
-        pressure = to_float(mop)
-
-    mb31g_num = to_float(mb31g)
-
-    if pressure is None or mb31g_num in (None, 0):
-        return ""
-
-    return round(pressure / (0.72 * mb31g_num), 3)
+    return round((mb31g_num / smys_num) / (2 * wt_num / diameter_num), 3)
 
 
 # ---------------------------

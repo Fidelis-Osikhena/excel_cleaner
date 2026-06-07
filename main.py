@@ -4,11 +4,13 @@ from tkinter import filedialog, messagebox, ttk
 
 from openpyxl import load_workbook
 from clients.oneok import process_oneok_workbook
+from clients.enbridge_canada import process_enbridge_canada_workbook
 from dras_export import generate_dras_files
 
 
 CLIENTS = {
     "ONEOK": process_oneok_workbook,
+    "Enbridge Canada": process_enbridge_canada_workbook,
 }
 
 PIPE_DIAMETERS = [

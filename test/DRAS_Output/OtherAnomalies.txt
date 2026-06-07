@@ -1,5 +1,5 @@
 PackageCode	ID	Odometer	Azimuth	X_Coord	Y_Coord	Lat	Long	Height	Length	Width	Depth (Geometric)	Depth (Volumetric)	Strain	Status	Description	Surface	Discovery Date	Hardness	Depth Tolerance - @ 80% Conf.	Depth Tolerance - StdDev	Length Tolerance - @ 80% Conf.	Length Tolerance - StdDev	Width Tolerance - @ 80% Conf.	Width Tolerance - StdDev
-	44	71.1216	182	587495.069	5286404.1294	47.72508156	-79.83325087	206.6	113.5	64.5	0.007				Deformation									
+	44	71.1216	182	587495.069	5286404.1294	47.72508156	-79.83325087	206.6	113.5	64.5	0.007		0.035	Active	Deformation				0.005	0.004	15	12.0	20	16.0
 	45	73.9457	71	587497.8253	5286403.5763	47.72507621	-79.83321423	206.6	10	10.8		0.08			Metal Loss Manufacturing - s	E								
 	46	77.888	79	587501.6726	5286402.8016	47.72506872	-79.83316309	206.6	9.9	15.1		0.06			Metal Loss Manufacturing	E								
 	47	78.4669	175	587502.2375	5286402.6879	47.72506762	-79.83315559	206.6	59	64.5	0.005				Deformation									

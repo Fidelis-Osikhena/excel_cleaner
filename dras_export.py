@@ -140,8 +140,17 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
     output_path = os.path.join(output_folder, "Cluster.txt")
 
     cluster_ids = []
+
     for row in range(2, ws.max_row + 1):
+        if not is_flagged_row(ws, row, headers, ["Cluster"]):
+            continue
+
+        feature_id = get_value(ws, row, headers, ["Feature ID", "Feature Id"])
+
         cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
+        if cluster_id in ("", None):
+            cluster_id = feature_id
+
         if cluster_id not in ("", None):
             cluster_ids.append(str(cluster_id).strip())
 
@@ -161,55 +170,60 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
         for row in range(2, ws.max_row + 1):
             if not is_flagged_row(ws, row, headers, ["Cluster"]):
                 continue
+
+            feature_id = get_value(ws, row, headers, ["Feature ID", "Feature Id"])
+
             cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
             if cluster_id in ("", None):
-                continue
+                cluster_id = feature_id
 
             cluster_id_text = str(cluster_id).strip()
 
-            maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)"])
-            mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)"])
-            smys = get_value(ws, row, headers, ["SMYS (kPa)", "SMYS (psi)"])
-            mb31g = get_value(ws, row, headers, ["MB31G (kPa)", "MB31G (psi)"])
-            wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"])
-            outside_diameter = pipe_diameter
-
-            fpr = calc_fpr(mb31g, maop)
-            rpr = calc_rpr(mb31g, smys, wall_thickness, pipe_diameter)
+            maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)", "MAOP"])
+            mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)", "MOP"])
+            smys = get_value(ws, row, headers, ["SMYS (kPa)", "SMYS (psi)", "SMYS"])
+            mb31g = get_value(ws, row, headers, ["MB31G (kPa)", "MB31G (psi)", "MB31G"])
+            wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)", "Wall Thickness", "WT"])
 
             output_row = {
                 "PackageCode": "",
-                "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
+                "ID": feature_id,
                 "Number of Boxes in Cluster": cluster_counts.get(cluster_id_text, 1),
-                "Odometer": get_value(ws, row, headers, ["Odometer Main (m)", "Odometer Main (ft)"]),
-                "Azimuth": get_value(ws, row, headers, ["Orientation Center"]),
-                "X_Coord": get_value(ws, row, headers, ["Easting (m)", "Easting (ft)"]),
-                "Y_Coord": get_value(ws, row, headers, ["Northing (m)", "Northing (ft)"]),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main (m)", "Odometer Main (ft)", "Odometer Main", "Odometer"]),
+                "Azimuth": get_callbox_azimuth(ws, row, headers),
+                "X_Coord": get_value(ws, row, headers, ["Easting (m)", "Easting (ft)", "Easting", "X_Coord", "X Coord"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing (m)", "Northing (ft)", "Northing", "Y_Coord", "Y Coord"]),
                 "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
                 "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
-                "Height": get_value(ws, row, headers, ["Height (m)", "Height (ft)"]),
-                "Length": get_value(ws, row, headers, ["Length (mm)", "Length (in)"]),
-                "Width": get_value(ws, row, headers, ["Width(mm)", "Width (in)"]),
-                "Peak Depth": get_value(ws, row, headers, ["Depth (%)"]),
-                "Effective Length": get_value(ws, row, headers, ["Effective Length (mm)", "Effective Length (in)"]),
-                "Effective Depth": get_value(ws, row, headers, ["Effective Depth (%)"]),
+                "Height": get_value(ws, row, headers, ["Height (m)", "Height (ft)", "Height"]),
+                "Length": get_value(ws, row, headers, ["Length (mm)", "Length (in)", "Length"]),
+                "Width": get_value(ws, row, headers, ["Width (mm)", "Width(mm)", "Width (in)", "Width"]),
+                "Peak Depth": get_value(ws, row, headers, ["Depth (%)", "Peak Depth"]),
+                "Effective Length": get_value(ws, row, headers, ["Effective Length (mm)", "Effective Length (in)", "Effective Length"]),
+                "Effective Depth": get_value(ws, row, headers, ["Effective Depth (%)", "Effective Depth"]),
                 "Failure Pressure": mb31g,
-                "FPR": fpr,
-                "FPRTC": "",
-                "RPR": rpr,
+                "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
+                "FPRTC": get_existing_export_value(ws, row, headers, "FPRTC"),
+                "RPR": calc_rpr(mb31g, smys, wall_thickness, pipe_diameter),
                 "Due Date": "",
-                "Status": "",
+                "Status": get_existing_export_value(ws, row, headers, "Status"),
                 "Description": get_dras_description(ws, row, headers),
                 "Surface": get_surface(ws, row, headers),
-                "Metal Loss Type": "",
+                "Metal Loss Type": get_existing_export_value(ws, row, headers, "Metal Loss Type"),
                 "Growth Rate": "",
-                "ERF": "",
-                "Depth Tolerance - @ 80% Conf.": "",
-                "Depth Tolerance - StdDev": "",
-                "Length Tolerance - @ 80% Conf.": "",
-                "Length Tolerance - StdDev": "",
-                "Width Tolerance - @ 80% Conf.": "",
-                "Width Tolerance - StdDev": "",
+                "ERF": calc_erf(maop, mop, mb31g),
+                "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
+                "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                ),
+                "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
+                "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
+                ),
+                "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
+                "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
+                ),
             }
 
             writer.writerow(clean_output_row(output_row))
@@ -259,6 +273,15 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
             lineterminator="\n",
         )
         writer.writeheader()
+        id_lookup = {}
+
+        for r in range(2, ws.max_row + 1):
+            row_id = get_value(ws, r, headers, ["ID"])
+            feature_id = get_value(ws, r, headers, ["Feature ID"])
+
+            if row_id not in ("", None):
+                id_lookup[str(row_id).strip()] = feature_id
+
 
         for row in range(2, ws.max_row + 1):
             if not is_flagged_row(ws, row, headers, ["Callbox", "Call Box"]):
@@ -276,7 +299,7 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
             output_row = {
                 "PackageCode": "",
                 "ID": feature_id,
-                "Cluster ID": get_callbox_cluster_id(ws, row, headers),
+                "Cluster ID": get_cluster_feature_id(ws, row, headers,id_lookup),
                 "Odometer": get_value(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)"]),
                 "Azimuth": get_callbox_azimuth(ws, row, headers),
                 "X_Coord": get_value(ws, row, headers, ["Easting (ft)", "Easting (m)"]),
@@ -289,20 +312,28 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "Peak Depth": get_value(ws, row, headers, ["Depth (%)", "Peak Depth"]),
                 "Failure Pressure": mb31g,
                 "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
-                "FPRTC": "",
+                "FPRTC": get_existing_export_value(ws, row, headers, "FPRTC"),
                 "RPR": calc_rpr(mb31g, smys, wall_thickness, pipe_diameter),
-                "Manual Analysis Flag": "",
+                "Manual Analysis Flag": get_existing_export_value(ws, row, headers, "ManualAnalysis Flag"),
                 "Surface": get_surface(ws, row, headers),
-                "Metal Loss Type": "",
+                "Metal Loss Type": get_existing_export_value(ws, row, headers, "Metal Loss Type"),
                 "Growth Rate": "",
                 "Discovery Date": "",
                 "ERF": calc_erf(maop, mop, mb31g),
-                "Depth Tolerance - @ 80% Conf.": "",
-                "Depth Tolerance - StdDev": "",
-                "Length Tolerance - @ 80% Conf.": "",
-                "Length Tolerance - StdDev": "",
-                "Width Tolerance - @ 80% Conf.": "",
-                "Width Tolerance - StdDev": "",
+                "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
+                "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                ),
+
+                "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
+                "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
+                ),
+
+                "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
+                "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
+                ),
             }
 
             writer.writerow(clean_output_row(output_row))
@@ -389,7 +420,7 @@ def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -
                 "DepthPercentText": "",
                 "Failure Pressure": mb31g,
                 "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
-                "FPRTC": "",
+                "FPRTC": get_existing_export_value(ws, row, headers, "FPRTC"),
                 "RPR": calc_rpr(mb31g, smys, wall_thickness, pipe_diameter),
                 "Relative Position": "",
                 "Type": "",
@@ -397,17 +428,25 @@ def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -
                 "Surface": get_surface(ws, row, headers),
                 "POE": "",
                 "Due Date": "",
-                "Status": "",
+                "Status": get_existing_export_value(ws, row, headers, "Status"),
                 "Growth Rate Depth": "",
                 "Growth Rate Length": "",
                 "Discovery Date": "",
                 "ESF": "",
-                "Depth Tolerance - @ 80% Conf.": "",
-                "Depth Tolerance - StdDev": "",
-                "Length Tolerance - @ 80% Conf.": "",
-                "Length Tolerance - StdDev": "",
-                "Width Tolerance - @ 80% Conf.": "",
-                "Width Tolerance - StdDev": "",
+                "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
+                "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                ),
+
+                "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
+                "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
+                ),
+
+                "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
+                "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
+                ),
             }
 
             writer.writerow(clean_output_row(output_row))
@@ -500,18 +539,26 @@ def generate_other_anomalies_txt(ws, output_folder: str) -> None:
                 "Width": get_value(ws, row, headers, ["Width (mm)", "Width (in)", "Width"]),
                 "Depth (Geometric)": depth_value if feature_type == "deformation" else "",
                 "Depth (Volumetric)": "" if feature_type == "deformation" else depth_value,
-                "Strain": "",
-                "Status": "",
+                "Strain": get_existing_export_value(ws, row, headers, "Strain"),
+                "Status": get_existing_export_value(ws, row, headers, "Status"),
                 "Description": get_dras_description(ws, row, headers),
                 "Surface": get_surface(ws, row, headers),
                 "Discovery Date": "",
                 "Hardness": "",
-                "Depth Tolerance - @ 80% Conf.": "",
-                "Depth Tolerance - StdDev": "",
-                "Length Tolerance - @ 80% Conf.": "",
-                "Length Tolerance - StdDev": "",
-                "Width Tolerance - @ 80% Conf.": "",
-                "Width Tolerance - StdDev": "",
+                "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
+                "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                ),
+
+                "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
+                "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
+                ),
+
+                "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
+                "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
+                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
+                ),
             }
 
             writer.writerow(clean_output_row(output_row))
@@ -784,12 +831,19 @@ def calc_rpr(mb31g, smys, wall_thickness, pipe_diameter):
 # CALLBOX HELPERS
 # ---------------------------
 
-def get_callbox_cluster_id(ws, row: int, headers: dict[str, int]) -> str:
-    cluster = get_value(ws, row, headers, ["Cluster", "Cluster ID", "Cluster Id"])
-    if cluster not in ("", None):
-        return cluster
+def get_cluster_feature_id(
+    ws,
+    row: int,
+    headers: dict[str, int],
+    id_lookup: dict[str, str]
+):
+    cluster = get_value(ws, row, headers, ["Cluster"])
+    feature_id = get_value(ws, row, headers, ["Feature ID"])
 
-    return get_value(ws, row, headers, ["Feature ID", "Feature Id"])
+    if cluster in ("", None):
+        return feature_id
+
+    return id_lookup.get(str(cluster).strip(), "")
 
 
 def get_callbox_azimuth(ws, row: int, headers: dict[str, int]) -> str:
@@ -980,3 +1034,19 @@ def clean_output_row(row: dict[str, object]) -> dict[str, str]:
 def is_flagged_row(ws, row: int, headers: dict[str, int], flag_headers: list[str]) -> bool:
     value = get_value(ws, row, headers, flag_headers)
     return str(value).strip().lower() in {"1", "1.0", "yes", "y", "true"}
+
+
+def get_existing_export_value(ws, row: int, headers: dict[str, int], column_name: str):
+    """
+    Finds and returns a value from the imported Excel/export file by exact header.
+    Used for fields like FPRTC and Status where the rule says:
+    'find column with this header in export file'.
+    """
+    return get_value(ws, row, headers, [column_name])
+
+
+def calc_tolerance_stddev_from_80_conf(value):
+    num = to_float(value)
+    if num is None:
+        return ""
+    return round(num / 1.25, 3)

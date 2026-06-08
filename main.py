@@ -10,7 +10,7 @@ from dras_export import generate_dras_files
 
 CLIENTS = {
     "ONEOK": process_oneok_workbook,
-    "Enbridge Canada": process_enbridge_canada_workbook,
+    "ENBRIDGE CANADA (DO NOT USE)": process_enbridge_canada_workbook,
 }
 
 PIPE_DIAMETERS = [

@@ -10,7 +10,12 @@ from dras_export import generate_dras_files
 
 CLIENTS = {
     "ONEOK": process_oneok_workbook,
-    "ENBRIDGE CANADA (DO NOT USE)": process_enbridge_canada_workbook,
+    "ENBRIDGE CANADA": process_enbridge_canada_workbook,
+}
+
+CLIENT_UNIT_SYSTEMS = {
+    "ONEOK": "Imperial",
+    "ENBRIDGE CANADA": "Metric",
 }
 
 PIPE_DIAMETERS = [
@@ -136,6 +141,23 @@ class ExcelCleanerApp:
             messagebox.showerror("Invalid pipe diameter", "Please select a valid pipe diameter.")
             return
 
+
+        unit_system = CLIENT_UNIT_SYSTEMS.get(client_name, "")
+
+        confirmed = messagebox.askyesno(
+            "Confirm Processing Settings",
+            f"Please confirm the following:\n\n"
+            f"Client: {client_name}\n"
+            f"Pipe Diameter: {pipe_diameter} in\n"
+            f"Expected Export Units: {unit_system}\n\n"
+            f"Reminder:\n"
+            f"{client_name} should be processed using a {unit_system.lower()} export.\n\n"
+            f"Continue processing?"
+        )
+
+        if not confirmed:
+            return
+
         try:
             ext = os.path.splitext(file_path)[1].lower()
             keep_vba = ext in {".xlsm", ".xltm"}
@@ -173,6 +195,16 @@ class ExcelCleanerApp:
 
         if not file_path:
             messagebox.showwarning("Missing file", "Please select an Excel file first.")
+            return
+
+        confirmed = messagebox.askyesno(
+            "Confirm Excel Preparation",
+            "Have all required columns been added and populated in the Excel file?\n\n"
+            "DRAS generation expects the processed workbook to already contain the required columns.\n\n"
+            "Click Yes to continue or No to cancel."
+        )
+
+        if not confirmed:
             return
 
         try:

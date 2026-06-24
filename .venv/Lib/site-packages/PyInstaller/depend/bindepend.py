@@ -286,14 +286,22 @@ def get_imports(filename, search_paths=None):
     Additional list of search paths may be specified via `search_paths`, to be used as a fall-back when the
     platform-specific resolution mechanism fails to resolve a library fullpath.
     """
-    if compat.is_win:
-        if str(filename).lower().endswith(".manifest"):
-            return []
-        return _get_imports_pefile(filename, search_paths)
-    elif compat.is_darwin:
-        return _get_imports_macholib(filename, search_paths)
-    else:
-        return _get_imports_ldd(filename, search_paths)
+    # Ensure search_paths is immutable, so that it can be hashed for the purposes of caching.
+    if search_paths is not None:
+        search_paths = tuple(search_paths)
+
+    @functools.lru_cache
+    def _get_imports(filename, search_paths):
+        if compat.is_win:
+            if str(filename).lower().endswith(".manifest"):
+                return []
+            return _get_imports_pefile(filename, search_paths)
+        elif compat.is_darwin:
+            return _get_imports_macholib(filename, search_paths)
+        else:
+            return _get_imports_ldd(filename, search_paths)
+
+    return _get_imports(filename, search_paths)
 
 
 def _get_imports_pefile(filename, search_paths):
@@ -337,7 +345,7 @@ def _get_imports_pefile(filename, search_paths):
 
     # Attempt to resolve full paths to referenced DLLs. Always add the input binary's parent directory to the search
     # paths.
-    search_paths = [os.path.dirname(filename)] + (search_paths or [])
+    search_paths = (os.path.dirname(filename), *(search_paths or []))
     output = {(lib, resolve_library_path(lib, search_paths)) for lib in output}
 
     return output
@@ -361,16 +369,23 @@ def _get_imports_ldd(filename, search_paths):
         LDD_PATTERN = re.compile(r"^\s*(((?P<libarchive>(.*\.a))(?P<objectmember>\(.*\)))|((?P<libshared>(.*\.so))))$")
     elif compat.is_hpux:
         # Match libs of the form
-        #   'sharedlib.so => full-path-to-lib
+        #   sharedlib.so => full-path-to-lib
         # e.g.
-        #   'libpython2.7.so =>      /usr/local/lib/hpux32/libpython2.7.so'
+        #   libpython2.7.so =>      /usr/local/lib/hpux32/libpython2.7.so
         LDD_PATTERN = re.compile(r"^\s+(.*)\s+=>\s+(.*)$")
     elif compat.is_solar:
         # Match libs of the form
-        #   'sharedlib.so => full-path-to-lib
+        #   sharedlib.so => full-path-to-lib
         # e.g.
-        #   'libpython2.7.so.1.0 => /usr/local/lib/libpython2.7.so.1.0'
+        #   libpython2.7.so.1.0 => /usr/local/lib/libpython2.7.so.1.0
         # Will not match the platform specific libs starting with '/platform'
+        LDD_PATTERN = re.compile(r"^\s+(.*)\s+=>\s+(.*)$")
+    elif compat.is_termux:
+        # Match libs of the form
+        #   sharedlib.so => full-path-to-lib
+        # e.g.
+        #   libpython3.13.so => /data/data/com.termux/files/usr/lib/libpython3.13.so
+        # See: https://github.com/termux/termux-packages/blob/adb6efd/packages/ldd/ldd.in#L71-L72
         LDD_PATTERN = re.compile(r"^\s+(.*)\s+=>\s+(.*)$")
     elif compat.is_linux:
         # Match libs of the form
@@ -439,7 +454,7 @@ def _get_imports_ldd(filename, search_paths):
                 name = name or os.path.basename(lib)
                 if compat.is_linux:
                     # Skip all ld variants listed https://sourceware.org/glibc/wiki/ABIList
-                    # plus musl's ld-musl-*.so.*.
+                    # plus musl's ld-musl-*.so.* and Termux' ld-android.so.
                     if re.fullmatch(r"ld(64)?(-linux|-musl)?(-.+)?\.so(\..+)?", os.path.basename(lib)):
                         continue
             if name[:10] in ('linux-gate', 'linux-vdso'):

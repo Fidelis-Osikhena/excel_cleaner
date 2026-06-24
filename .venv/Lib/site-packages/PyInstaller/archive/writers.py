@@ -349,10 +349,18 @@ class SplashWriter:
     #
     #     uint32_t requirements_len;
     #     uint32_t requirements_offset;
+    #
+    #     uint32_t centering_mode;
     # } SPLASH_DATA_HEADER;
     #
-    _HEADER_FORMAT = '!32s 32s 16s 16s II II II'
+    _HEADER_FORMAT = '!32s 32s 16s 16s II II II I'
     _HEADER_LENGTH = struct.calcsize(_HEADER_FORMAT)
+
+    # Centering mode values - keep in sync with values defined in `bootloader/src/pyi_splash.h`!
+    _SPLASH_CENTER_DEFAULT = 0
+    _SPLASH_CENTER_VIRTUAL_SCREEN = 1
+    _SPLASH_CENTER_PRIMARY_SCREEN = 2
+    _SPLASH_CENTER_ACTIVE_SCREEN = 3
 
     # The created archive is compressed by the CArchive, so no need to compress the data here.
 
@@ -366,6 +374,7 @@ class SplashWriter:
         tk_module_directory_name,
         image,
         script,
+        center_mode,
     ):
         """
         Writer for splash screen resources that are bundled into the CArchive as a single archive/entry.
@@ -378,6 +387,7 @@ class SplashWriter:
         :param str tk_module_directory_name: Basename of the Tk module directory (e.g., tk/)
         :param Union[str, bytes] image: Image like object
         :param str script: The tcl/tk script to execute to create the screen.
+        :param str center_mode: Splash screen centering mode (integer value that matches enum used by bootloader)
         """
 
         # Ensure forward slashes in dependency names are on Windows converted to back slashes '\\', as on Windows the
@@ -452,6 +462,7 @@ class SplashWriter:
                 image_offset,
                 requirements_len,
                 requirements_offset,
+                center_mode,
             )
 
             fp.seek(0, os.SEEK_SET)

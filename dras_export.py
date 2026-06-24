@@ -476,7 +476,7 @@ def generate_facilities_txt(ws, output_folder: str) -> None:
         writer.writeheader()
 
         for row in range(2, ws.max_row + 1):
-            if not is_flagged_row(ws, row, headers, ["Facilities"]):
+            if not is_flagged_row(ws, row, headers, ["Facilities.txt"]):
                 continue
 
             output_row = {
@@ -519,7 +519,7 @@ def generate_other_anomalies_txt(ws, output_folder: str) -> None:
         writer.writeheader()
 
         for row in range(2, ws.max_row + 1):
-            if not is_flagged_row(ws, row, headers, ["OtherAnomalies", "Other Anomalies"]):
+            if not is_flagged_row(ws, row, headers, ["OtherAnomalies.txt"]):
                 continue
 
             feature_type = normalize_text(get_value(ws, row, headers, ["Feature Type"]))

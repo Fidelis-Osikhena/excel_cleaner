@@ -1,179 +1,246 @@
-import pandas as pd
+from openpyxl import load_workbook, Workbook
 from pathlib import Path
 
 # -----------------------------
-# SETTINGS
+# FILE SETTINGS
 # -----------------------------
 
 input_file = Path("input.xlsx")
-output_file = Path("aligned_output_fixed.xlsx")
+output_file = Path("aligned_girth_welds.xlsx")
 sheet_name = "Sheet1"
 
-# Your left table is columns A:C
-left_usecols = ["A Feature Type", "A Weld Id", "A Odometer Main"]
+# Original column layout
+left_cols = ["A", "B", "C"]      # A Weld Id, A Feature Type, A Odometer Main
+right_cols = ["H", "I", "J"]     # B Weld Id, B Odometer Main, B Feature Type
 
-# Your right table is columns G:I
-right_usecols = ["B Feature Type", "B Weld Id", "B Odometer Main"]
+header_row = 1
 
-left_feature_col = "A Feature Type"
-left_weld_col = "A Weld Id"
+# Column positions inside each side
+left_weld_index = 0
+left_feature_index = 1
 
-right_feature_col = "B Feature Type"
-right_weld_col = "B Weld Id"
+right_weld_index = 0
+right_feature_index = 2
 
-girth_value = "Girth Weld"
-
-
-# -----------------------------
-# READ LEFT AND RIGHT TABLES
-# -----------------------------
-
-left = pd.read_excel(input_file, sheet_name=sheet_name, usecols=left_usecols)
-right = pd.read_excel(input_file, sheet_name=sheet_name, usecols=right_usecols)
-
-# Remove completely empty rows at the bottom only
-left = left.dropna(how="all").reset_index(drop=True)
-right = right.dropna(how="all").reset_index(drop=True)
+girth_text = "girth weld"
 
 
 # -----------------------------
 # HELPER FUNCTIONS
 # -----------------------------
 
-def is_girth(row, feature_col):
-    return str(row[feature_col]).strip().lower() == girth_value.lower()
+def clean(value):
+    """Clean cell text."""
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def clean_weld_id(value):
-    if pd.isna(value):
-        return ""
-    return str(value).strip().replace(".0", "")
+    """Clean Weld ID values so 10 and 10.0 match."""
+    value = clean(value)
+
+    if value.endswith(".0"):
+        value = value[:-2]
+
+    return value
 
 
-def blank_row(columns):
-    return pd.Series({col: "" for col in columns})
+def is_girth(row, feature_index):
+    """Check whether a row is a Girth Weld row."""
+    return clean(row[feature_index]).lower() == girth_text
 
 
-def get_girth_positions(df, feature_col, weld_col):
+def blank_row(width):
+    """Create a blank row with the same number of columns."""
+    return [""] * width
+
+
+def read_side(ws, cols):
+    """Read one side of the worksheet."""
+    headers = [ws[f"{col}{header_row}"].value for col in cols]
+    rows = []
+
+    for r in range(header_row + 1, ws.max_row + 1):
+        row = [ws[f"{col}{r}"].value for col in cols]
+
+        # Keep rows that have at least one value
+        if any(clean(cell) != "" for cell in row):
+            rows.append(row)
+
+    return headers, rows
+
+
+def split_into_girth_blocks(rows, feature_index, weld_index):
     """
-    Returns a list of:
-    [
-        {"index": row_number, "weld_id": weld_id},
-        ...
-    ]
+    Split rows into blocks.
+
+    Each block starts with a Girth Weld row and includes all rows
+    after it until the next Girth Weld.
     """
-    girths = []
+    pre_rows = []
+    blocks = []
+    current_block = None
 
-    for idx, row in df.iterrows():
-        if is_girth(row, feature_col):
-            girths.append({
-                "index": idx,
-                "weld_id": clean_weld_id(row[weld_col])
-            })
+    for row in rows:
+        if is_girth(row, feature_index):
+            if current_block is not None:
+                blocks.append(current_block)
 
-    return girths
+            current_block = {
+                "weld_id": clean_weld_id(row[weld_index]),
+                "rows": [row]
+            }
 
+        else:
+            if current_block is None:
+                pre_rows.append(row)
+            else:
+                current_block["rows"].append(row)
 
-# -----------------------------
-# FIND GIRTH WELDS IN BOTH TABLES
-# -----------------------------
+    if current_block is not None:
+        blocks.append(current_block)
 
-left_girths = get_girth_positions(left, left_feature_col, left_weld_col)
-right_girths = get_girth_positions(right, right_feature_col, right_weld_col)
-
-left_ids = {g["weld_id"] for g in left_girths}
-right_ids = {g["weld_id"] for g in right_girths}
-
-# Only align girth welds that exist in BOTH tables
-common_ids = left_ids.intersection(right_ids)
-
-# Preserve left-side order
-matched_ids = [g["weld_id"] for g in left_girths if g["weld_id"] in common_ids]
+    return pre_rows, blocks
 
 
-# -----------------------------
-# BUILD ALIGNED OUTPUT
-# -----------------------------
+def align_block_sequences(left_blocks, right_blocks):
+    """
+    Align girth weld blocks using Weld ID.
+    Matching blocks must have the same Weld ID.
+    """
+    n = len(left_blocks)
+    m = len(right_blocks)
 
-aligned_left = []
-aligned_right = []
+    # Longest Common Subsequence table
+    dp = [[0] * (m + 1) for _ in range(n + 1)]
 
-left_start = 0
-right_start = 0
+    for i in range(n - 1, -1, -1):
+        for j in range(m - 1, -1, -1):
+            if left_blocks[i]["weld_id"] == right_blocks[j]["weld_id"]:
+                dp[i][j] = 1 + dp[i + 1][j + 1]
+            else:
+                dp[i][j] = max(dp[i + 1][j], dp[i][j + 1])
 
-for weld_id in matched_ids:
-    # Find the next matching girth weld in each table
-    left_match_index = next(
-        g["index"] for g in left_girths
-        if g["weld_id"] == weld_id and g["index"] >= left_start
-    )
+    operations = []
+    i = 0
+    j = 0
 
-    right_match_index = next(
-        g["index"] for g in right_girths
-        if g["weld_id"] == weld_id and g["index"] >= right_start
-    )
+    while i < n or j < m:
+        if (
+            i < n
+            and j < m
+            and left_blocks[i]["weld_id"] == right_blocks[j]["weld_id"]
+        ):
+            operations.append(("match", left_blocks[i], right_blocks[j]))
+            i += 1
+            j += 1
 
-    # Rows before this matching girth weld
-    left_block = left.iloc[left_start:left_match_index + 1]
-    right_block = right.iloc[right_start:right_match_index + 1]
+        elif j < m and (i == n or dp[i][j + 1] >= dp[i + 1][j]):
+            operations.append(("right_only", None, right_blocks[j]))
+            j += 1
 
-    # Make both blocks the same height by padding the shorter side
-    max_len = max(len(left_block), len(right_block))
+        else:
+            operations.append(("left_only", left_blocks[i], None))
+            i += 1
+
+    return operations
+
+
+def append_padded_rows(output_rows, left_rows, right_rows):
+    """
+    Add left/right rows to output, padding the shorter side with blanks.
+    """
+    max_len = max(len(left_rows), len(right_rows))
 
     for i in range(max_len):
-        if i < len(left_block):
-            aligned_left.append(left_block.iloc[i])
-        else:
-            aligned_left.append(blank_row(left.columns))
+        left_row = left_rows[i] if i < len(left_rows) else blank_row(3)
+        right_row = right_rows[i] if i < len(right_rows) else blank_row(3)
 
-        if i < len(right_block):
-            aligned_right.append(right_block.iloc[i])
-        else:
-            aligned_right.append(blank_row(right.columns))
-
-    # Move past the matched girth weld
-    left_start = left_match_index + 1
-    right_start = right_match_index + 1
+        # Keep original layout:
+        # A:C = left table
+        # D:G = blank spacer columns
+        # H:J = right table
+        output_rows.append(left_row + ["", "", "", ""] + right_row)
 
 
 # -----------------------------
-# ADD REMAINING ROWS AFTER LAST MATCH
+# LOAD INPUT FILE
 # -----------------------------
 
-left_remaining = left.iloc[left_start:]
-right_remaining = right.iloc[right_start:]
+wb = load_workbook(input_file)
+ws = wb[sheet_name]
 
-max_remaining = max(len(left_remaining), len(right_remaining))
+left_headers, left_rows = read_side(ws, left_cols)
+right_headers, right_rows = read_side(ws, right_cols)
 
-for i in range(max_remaining):
-    if i < len(left_remaining):
-        aligned_left.append(left_remaining.iloc[i])
-    else:
-        aligned_left.append(blank_row(left.columns))
+left_pre, left_blocks = split_into_girth_blocks(
+    left_rows,
+    left_feature_index,
+    left_weld_index
+)
 
-    if i < len(right_remaining):
-        aligned_right.append(right_remaining.iloc[i])
-    else:
-        aligned_right.append(blank_row(right.columns))
+right_pre, right_blocks = split_into_girth_blocks(
+    right_rows,
+    right_feature_index,
+    right_weld_index
+)
 
-
-# -----------------------------
-# COMBINE SIDE BY SIDE
-# -----------------------------
-
-aligned_left_df = pd.DataFrame(aligned_left).reset_index(drop=True)
-aligned_right_df = pd.DataFrame(aligned_right).reset_index(drop=True)
-
-# Add blank spacer columns like your original file
-spacer = pd.DataFrame({"": [""] * len(aligned_left_df), " ": [""] * len(aligned_left_df), "  ": [""] * len(aligned_left_df)})
-
-final_df = pd.concat([aligned_left_df, spacer, aligned_right_df], axis=1)
+operations = align_block_sequences(left_blocks, right_blocks)
 
 
 # -----------------------------
-# SAVE OUTPUT
+# BUILD OUTPUT ROWS
 # -----------------------------
 
-final_df.to_excel(output_file, sheet_name=sheet_name, index=False)
+output_rows = []
+
+# Header row
+output_rows.append(left_headers + ["", "", "", ""] + right_headers)
+
+# Rows before first girth weld
+append_padded_rows(output_rows, left_pre, right_pre)
+
+# Girth weld blocks
+for operation, left_block, right_block in operations:
+
+    if operation == "match":
+        append_padded_rows(
+            output_rows,
+            left_block["rows"],
+            right_block["rows"]
+        )
+
+    elif operation == "left_only":
+        append_padded_rows(
+            output_rows,
+            left_block["rows"],
+            []
+        )
+
+    elif operation == "right_only":
+        append_padded_rows(
+            output_rows,
+            [],
+            right_block["rows"]
+        )
+
+
+# -----------------------------
+# WRITE OUTPUT FILE
+# -----------------------------
+
+out_wb = Workbook()
+out_ws = out_wb.active
+out_ws.title = "Aligned"
+
+for r, row in enumerate(output_rows, start=1):
+    for c, value in enumerate(row, start=1):
+        out_ws.cell(row=r, column=c, value=value)
+
+out_wb.save(output_file)
 
 print(f"Done. Saved as: {output_file}")
+print(f"Left girth welds found: {len(left_blocks)}")
+print(f"Right girth welds found: {len(right_blocks)}")
+print(f"Matched girth welds: {sum(1 for op in operations if op[0] == 'match')}")

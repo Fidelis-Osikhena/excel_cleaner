@@ -70,7 +70,7 @@ def generate_joint_txt(ws, output_folder: str, pipe_diameter: float) -> None:
         writer.writeheader()
 
         for row in range(2, ws.max_row + 1):
-            joint_value = get_value(ws, row, headers, ["Joint"])
+            joint_value = get_value(ws, row, headers, ["Joint.txt"])
 
             if not is_joint_row(joint_value):
                 continue
@@ -140,19 +140,6 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
     output_path = os.path.join(output_folder, "Cluster.txt")
 
     cluster_ids = []
-
-    for row in range(2, ws.max_row + 1):
-        if not is_flagged_row(ws, row, headers, ["Cluster"]):
-            continue
-
-        feature_id = get_value(ws, row, headers, ["Feature ID", "Feature Id"])
-
-        cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
-        if cluster_id in ("", None):
-            cluster_id = feature_id
-
-        if cluster_id not in ("", None):
-            cluster_ids.append(str(cluster_id).strip())
 
     cluster_counts = {}
     for cluster_id in cluster_ids:

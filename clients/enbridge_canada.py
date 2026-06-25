@@ -81,25 +81,29 @@ def process_enbridge_canada_workbook(
 ) -> None:
     ws = wb.active
 
-    headers = _ensure_enbridge_columns(ws)
-    _process_enbridge_rows(ws, headers, pipe_diameter)
+    headers, output_map = _ensure_enbridge_columns(ws)
+    _process_enbridge_rows(ws, headers, output_map, pipe_diameter)
 
 
-def _ensure_enbridge_columns(ws) -> dict[str, int]:
+def _ensure_enbridge_columns(ws) -> tuple[dict[str, int], dict[str, str]]:
     headers = get_headers(ws)
+    output_map: dict[str, str] = {}
 
     anchor = "Feature Type"
 
-    for col_name in ENBRIDGE_COLUMNS:
-        if col_name.strip().lower() not in headers:
-            ensure_column_after(ws, anchor, col_name, headers)
-            headers = get_headers(ws)
-        anchor = col_name
+    for desired_name in ENBRIDGE_COLUMNS:
+        actual_name = get_available_output_column_name(headers, desired_name)
 
-    return get_headers(ws)
+        ensure_column_after(ws, anchor, actual_name, headers)
+        headers = get_headers(ws)
+
+        output_map[desired_name] = actual_name
+        anchor = actual_name
+
+    return headers, output_map
 
 
-def _process_enbridge_rows(ws, headers: dict[str, int], pipe_diameter: float | None) -> None:
+def _process_enbridge_rows(ws,headers: dict[str, int],output_map: dict[str, str],pipe_diameter: float | None,) -> None:
     feature_col = headers.get("feature type")
     if feature_col is None:
         return
@@ -110,13 +114,17 @@ def _process_enbridge_rows(ws, headers: dict[str, int], pipe_diameter: float | N
 
         values = map_enbridge_feature_row(ws, row, headers, feature, pipe_diameter)
 
-        for header_name, value in values.items():
-            col = headers.get(header_name.strip().lower())
+        for desired_header, value in values.items():
+            actual_header = output_map.get(desired_header, desired_header)
+            col = headers.get(actual_header.strip().lower())
+
             if col:
                 ws.cell(row=row, column=col).value = value
 
-    for col_name in ENBRIDGE_COLUMNS:
-        col = headers.get(col_name.strip().lower())
+    for desired_header in ENBRIDGE_COLUMNS:
+        actual_header = output_map.get(desired_header, desired_header)
+        col = headers.get(actual_header.strip().lower())
+
         if col:
             fill_column_green(ws, col)
 
@@ -282,7 +290,7 @@ def map_enbridge_feature_row(
     result["Feature Identification"] = map_enbridge_feature_identification(feature)
 
     result["Feature ID"] = get_source(ws, row, headers, ["Feature ID", "Feature Id"])
-    result["Odometer (m)"] = get_source(ws, row, headers, ["Odometer Main", "Odometer Main (m)", "Odometer"])
+    result["Odometer (m)"] = get_source(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)", "Odometer"])
     result["NPS"] = get_nps(pipe_diameter)
     result["Tool Technology"] = map_tool_technology(get_source(ws, row, headers, ["Sensor Type"]))
     result["Clock Position"] = get_source(ws, row, headers, ["Orientation Main", "Orientation Final", "Orientation Center"])
@@ -573,13 +581,6 @@ def bend_orientation_to_direction(value: object) -> str:
         return "down"
     return "left"
 
-def get_25mm_from_gw(ws, row: int, headers: dict[str, int]) -> str:
-    return ""
-
-
-def get_25mm_from_sw(ws, row: int, headers: dict[str, int], pipe_diameter: float | None) -> str:
-    return ""
-
 def get_depth_percent(value: object) -> float | None:
     if value is None:
         return None
@@ -792,3 +793,53 @@ def circumferential_distance_mm(
         diff = 360 - diff
 
     return diff * math.pi * diameter_mm / 360
+
+def get_available_enbridge_column_name(
+    headers: dict[str, int],
+    desired_name: str,
+) -> str:
+    """
+    If desired_name already exists,
+    create:
+        Name (New)
+        Name (New 2)
+        Name (New 3)
+        ...
+    """
+
+    if desired_name.strip().lower() not in headers:
+        return desired_name
+
+    candidate = f"{desired_name} (New)"
+    if candidate.strip().lower() not in headers:
+        return candidate
+
+    counter = 2
+
+    while True:
+        candidate = f"{desired_name} (New {counter})"
+
+        if candidate.strip().lower() not in headers:
+            return candidate
+
+        counter += 1
+
+def get_available_output_column_name(
+    headers: dict[str, int],
+    desired_name: str,
+) -> str:
+    desired_key = desired_name.strip().lower()
+
+    if desired_key not in headers:
+        return desired_name
+
+    candidate = f"{desired_name} (New)"
+    if candidate.strip().lower() not in headers:
+        return candidate
+
+    counter = 2
+    while True:
+        candidate = f"{desired_name} (New {counter})"
+        if candidate.strip().lower() not in headers:
+            return candidate
+        counter += 1

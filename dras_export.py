@@ -100,7 +100,6 @@ def generate_joint_txt(ws, output_folder: str, pipe_diameter: float) -> None:
 
 
 CLUSTER_OUTPUT_COLUMNS = [
-    "PackageCode",
     "ID",
     "Number of Boxes in Cluster",
     "Odometer",
@@ -155,7 +154,7 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
         writer.writeheader()
 
         for row in range(2, ws.max_row + 1):
-            if not is_flagged_row(ws, row, headers, ["Cluster"]):
+            if not is_flagged_row(ws, row, headers, ["Cluster.txt"]):
                 continue
 
             feature_id = get_value(ws, row, headers, ["Feature ID", "Feature Id"])
@@ -173,7 +172,6 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
             wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)", "Wall Thickness", "WT"])
 
             output_row = {
-                "PackageCode": "",
                 "ID": feature_id,
                 "Number of Boxes in Cluster": cluster_counts.get(cluster_id_text, 1),
                 "Odometer": get_value(ws, row, headers, ["Odometer Main (m)", "Odometer Main (ft)", "Odometer Main", "Odometer"]),
@@ -216,7 +214,6 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
             writer.writerow(clean_output_row(output_row))
 
 CALLBOX_OUTPUT_COLUMNS = [
-    "PackageCode",
     "ID",
     "Cluster ID",
     "Odometer",
@@ -271,7 +268,7 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
 
 
         for row in range(2, ws.max_row + 1):
-            if not is_flagged_row(ws, row, headers, ["Callbox", "Call Box"]):
+            if not is_flagged_row(ws, row, headers, ["Callbox.txt", "Call Box"]):
                 continue
             feature_id = get_value(ws, row, headers, ["Feature ID", "Feature Id"])
             if feature_id in ("", None):
@@ -284,7 +281,6 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
             wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"])
 
             output_row = {
-                "PackageCode": "",
                 "ID": feature_id,
                 "Cluster ID": get_cluster_feature_id(ws, row, headers,id_lookup),
                 "Odometer": get_value(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)"]),
@@ -301,7 +297,7 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
                 "FPRTC": get_existing_export_value(ws, row, headers, "FPRTC"),
                 "RPR": calc_rpr(mb31g, smys, wall_thickness, pipe_diameter),
-                "Manual Analysis Flag": get_existing_export_value(ws, row, headers, "ManualAnalysis Flag"),
+                "Manual Analysis Flag": get_existing_export_value(ws, row, headers, "Manual Analysis Flag"),
                 "Surface": get_surface(ws, row, headers),
                 "Metal Loss Type": get_existing_export_value(ws, row, headers, "Metal Loss Type"),
                 "Growth Rate": "",
@@ -327,7 +323,6 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
 
 
 CRACK_ANOMALIES_OUTPUT_COLUMNS = [
-    "PackageCode",
     "ID",
     "Odometer",
     "Azimuth",
@@ -380,7 +375,7 @@ def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -
         writer.writeheader()
 
         for row in range(2, ws.max_row + 1):
-            if not is_flagged_row(ws, row, headers, ["CrackAnomalies", "Crack Anomalies"]):
+            if not is_flagged_row(ws, row, headers, ["CrackAnomalies.txt", "CrackAnomalies"]):
                 continue
 
             maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)"])
@@ -390,7 +385,6 @@ def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -
             wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"])
 
             output_row = {
-                "PackageCode": "",
                 "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
                 "Odometer": get_value(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)"]),
                 "Azimuth": get_callbox_azimuth(ws, row, headers),
@@ -469,11 +463,11 @@ def generate_facilities_txt(ws, output_folder: str) -> None:
             output_row = {
                 "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
                 "Odometer": get_value(ws, row, headers, ["Odometer Main", "Odometer Main (m)", "Odometer"]),
-                "X_Coord": get_value(ws, row, headers, ["Easting", "Easting (m)"]),
-                "Y_Coord": get_value(ws, row, headers, ["Northing", "Northing (m)"]),
+                "X_Coord": get_value(ws, row, headers, ["Easting (ft)", "Easting (m)"]),
+                "Y_Coord": get_value(ws, row, headers, ["Northing (ft)", "Northing (m)"]),
                 "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
                 "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
-                "Height": get_value(ws, row, headers, ["Height", "Height (m)"]),
+                "Height": get_value(ws, row, headers, ["Height (ft)", "Height (m)"]),
                 "Tool Speed": get_value(ws, row, headers, ["Speed (m/s)", "Speed (ft/s)"]),
                 "Description": get_facilities_description(ws, row, headers),
             }
@@ -482,7 +476,7 @@ def generate_facilities_txt(ws, output_folder: str) -> None:
 
 
 OTHER_ANOMALIES_OUTPUT_COLUMNS = [
-    "PackageCode", "ID", "Odometer", "Azimuth", "X_Coord", "Y_Coord",
+    "ID", "Odometer", "Azimuth", "X_Coord", "Y_Coord",
     "Lat", "Long", "Height", "Length", "Width", "Depth (Geometric)",
     "Depth (Volumetric)", "Strain", "Status", "Description", "Surface",
     "Discovery Date", "Hardness", "Depth Tolerance - @ 80% Conf.",
@@ -513,15 +507,14 @@ def generate_other_anomalies_txt(ws, output_folder: str) -> None:
             depth_value = get_value(ws, row, headers, ["Depth (%)"])
 
             output_row = {
-                "PackageCode": "",
                 "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
-                "Odometer": get_value(ws, row, headers, ["Odometer Main", "Odometer Main (m)"]),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)"]),
                 "Azimuth": get_callbox_azimuth(ws, row, headers),
                 "X_Coord": get_value(ws, row, headers, ["Easting (ft)", "Easting (m)"]),
                 "Y_Coord": get_value(ws, row, headers, ["Northing (ft)", "Northing (m)"]),
                 "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
                 "Long": get_value(ws, row, headers, ["Longitude", "Long"]),
-                "Height": get_value(ws, row, headers, ["Height", "Height (m)"]),
+                "Height": get_value(ws, row, headers, ["Height (ft)", "Height (m)"]),
                 "Length": get_value(ws, row, headers, ["Length (mm)", "Length (in)", "Length"]),
                 "Width": get_value(ws, row, headers, ["Width (mm)", "Width (in)", "Width"]),
                 "Depth (Geometric)": depth_value if feature_type == "deformation" else "",
@@ -739,6 +732,7 @@ def get_mop_value(ws, row: int, headers: dict[str, int]) -> str:
 
     return ""
 
+FT_PER_SECOND_TO_M_PER_SECOND = 0.3048
 
 def get_detectable_length(ws, row: int, headers: dict[str, int]) -> str:
     """
@@ -747,16 +741,21 @@ def get_detectable_length(ws, row: int, headers: dict[str, int]) -> str:
     If speed >= 6 m/s, return blank.
     """
 
-    speed_value = get_value(ws, row, headers, ["Speed (m/s)", "Speed (ft/s)"])
-    speed = to_float(speed_value)
+    speed_mps = to_float(
+        get_value(ws, row, headers, ["Speed (m/s)"])
+    )
 
-    if speed is None:
-        return ""
+    if speed_mps is None:
+        speed_fps = to_float(
+            get_value(ws, row, headers, ["Speed (ft/s)"])
+        )
 
-    if speed < 6:
-        return "0.1"
+        if speed_fps is None:
+            return ""
 
-    return ""
+        speed_mps = speed_fps * FT_PER_SECOND_TO_M_PER_SECOND
+
+    return "0.1" if speed_mps < 6 else ""
 
 # ---------------------------
 # Cluster.TXT RULE HELPERS
@@ -767,9 +766,13 @@ def get_dras_description(ws, row: int, headers: dict[str, int]) -> str:
     comment = safe_str(get_value(ws, row, headers, ["Comment Working", "Comments"]))
 
     if feature and comment:
+        if comment.startswith("-"):
+            return f"{feature} {comment}"
         return f"{feature} - {comment}"
+
     if feature:
         return feature
+
     return comment
 
 
@@ -1004,17 +1007,24 @@ def clock_orientation_to_degrees(value: object) -> int | None:
 
 
 def clean_output_row(row: dict[str, object]) -> dict[str, str]:
-    """
-    Converts all output values to strings for tab-delimited export.
-    """
-
     cleaned = {}
 
     for key, value in row.items():
         if value is None:
             cleaned[key] = ""
         else:
-            cleaned[key] = str(value).strip()
+            text = str(value)
+
+            # Prevent tabs/newlines from breaking tab-delimited rows
+            text = (
+                text.replace("\t", " ")
+                    .replace("\r\n", " ")
+                    .replace("\n", " ")
+                    .replace("\r", " ")
+                    .strip()
+            )
+
+            cleaned[key] = text
 
     return cleaned
 
@@ -1036,4 +1046,10 @@ def calc_tolerance_stddev_from_80_conf(value):
     num = to_float(value)
     if num is None:
         return ""
-    return round(num / 1.25, 3)
+    return round(num / 1.25, 2)
+
+def format_decimal(value, places=2):
+    num = to_float(value)
+    if num is None:
+        return ""
+    return round(num, places)

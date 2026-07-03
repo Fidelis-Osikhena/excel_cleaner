@@ -138,11 +138,16 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
     headers = get_headers(ws)
     output_path = os.path.join(output_folder, "Cluster.txt")
 
-    cluster_ids = []
-
     cluster_counts = {}
-    for cluster_id in cluster_ids:
-        cluster_counts[cluster_id] = cluster_counts.get(cluster_id, 0) + 1
+
+    for r in range(2, ws.max_row + 1):
+        cluster_value = get_value(ws, r, headers, ["Cluster"])
+
+        if cluster_value in ("", None):
+            continue
+
+        cluster_key = str(cluster_value).strip()
+        cluster_counts[cluster_key] = cluster_counts.get(cluster_key, 0) + 1
 
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
@@ -157,13 +162,11 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
             if not is_flagged_row(ws, row, headers, ["Cluster.txt"]):
                 continue
 
+            id_value = get_value(ws, row, headers, ["ID", "Id"])
             feature_id = get_value(ws, row, headers, ["Feature ID", "Feature Id"])
 
-            cluster_id = get_value(ws, row, headers, ["Cluster ID", "Cluster Id"])
-            if cluster_id in ("", None):
-                cluster_id = feature_id
-
-            cluster_id_text = str(cluster_id).strip()
+            id_key = "" if id_value in ("", None) else str(id_value).strip()
+            num_boxes = cluster_counts.get(id_key, "")
 
             maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)", "MAOP"])
             mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)", "MOP"])
@@ -173,7 +176,7 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
 
             output_row = {
                 "ID": feature_id,
-                "Number of Boxes in Cluster": cluster_counts.get(cluster_id_text, 1),
+                "Number of Boxes in Cluster": num_boxes,
                 "Odometer": get_value(ws, row, headers, ["Odometer Main (m)", "Odometer Main (ft)", "Odometer Main", "Odometer"]),
                 "Azimuth": get_callbox_azimuth(ws, row, headers),
                 "X_Coord": get_value(ws, row, headers, ["Easting (m)", "Easting (ft)", "Easting", "X_Coord", "X Coord"]),
@@ -185,7 +188,7 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "Width": get_value(ws, row, headers, ["Width (mm)", "Width(mm)", "Width (in)", "Width"]),
                 "Peak Depth": get_value(ws, row, headers, ["Depth (%)", "Peak Depth"]),
                 "Effective Length": get_value(ws, row, headers, ["Effective Length (mm)", "Effective Length (in)", "Effective Length"]),
-                "Effective Depth": get_value(ws, row, headers, ["Effective Depth (%)", "Effective Depth"]),
+                "Effective Depth": format_decimal(get_value(ws, row, headers, ["Effective Depth (%)", "Effective Depth"]), 2),
                 "Failure Pressure": mb31g,
                 "FPR": calc_fpr_choose_pressure(mb31g, maop, mop),
                 "FPRTC": get_existing_export_value(ws, row, headers, "FPRTC"),
@@ -199,15 +202,15 @@ def generate_cluster_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "ERF": calc_erf(maop, mop, mb31g),
                 "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
                 "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]), 2),
                 ),
                 "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
                 "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]), 2),
                 ),
                 "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
                 "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]), 2),
                 ),
             }
 
@@ -305,17 +308,17 @@ def generate_callbox_txt(ws, output_folder: str, pipe_diameter: float) -> None:
                 "ERF": calc_erf(maop, mop, mb31g),
                 "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
                 "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]), 2),
                 ),
 
                 "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
                 "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]), 2),
                 ),
 
                 "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
                 "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]), 2),
                 ),
             }
 
@@ -381,7 +384,7 @@ def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -
             maop = get_value(ws, row, headers, ["MAOP (kPa)", "MAOP (psi)"])
             mop = get_value(ws, row, headers, ["MOP (kPa)", "MOP (psi)"])
             smys = get_value(ws, row, headers, ["SMYS (kPa)", "SMYS (psi)"])
-            mb31g = get_value(ws, row, headers, ["MB31G", "MB31G (kpa)", "MB31G (psi)"])
+            mb31g = get_value(ws, row, headers, ["MB31G", "MB31G (kPa)", "MB31G (psi)"])
             wall_thickness = get_value(ws, row, headers, ["Wall Thickness (mm)", "Wall Thickness (in)"])
 
             output_row = {
@@ -416,17 +419,17 @@ def generate_crack_anomalies_txt(ws, output_folder: str, pipe_diameter: float) -
                 "ESF": "",
                 "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
                 "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]), 2),
                 ),
 
                 "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
                 "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]), 2),
                 ),
 
                 "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
                 "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]), 2),
                 ),
             }
 
@@ -462,7 +465,7 @@ def generate_facilities_txt(ws, output_folder: str) -> None:
 
             output_row = {
                 "ID": get_value(ws, row, headers, ["Feature ID", "Feature Id"]),
-                "Odometer": get_value(ws, row, headers, ["Odometer Main", "Odometer Main (m)", "Odometer"]),
+                "Odometer": get_value(ws, row, headers, ["Odometer Main (ft)", "Odometer Main (m)", "Odometer"]),
                 "X_Coord": get_value(ws, row, headers, ["Easting (ft)", "Easting (m)"]),
                 "Y_Coord": get_value(ws, row, headers, ["Northing (ft)", "Northing (m)"]),
                 "Lat": get_value(ws, row, headers, ["Latitude", "Lat"]),
@@ -527,18 +530,18 @@ def generate_other_anomalies_txt(ws, output_folder: str) -> None:
                 "Hardness": "",
                 "Depth Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]),
                 "Depth Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."])
+                    format_decimal(get_value(ws, row, headers, ["Depth Tolerance - @ 80% Conf."]), 2),
                 ),
 
                 "Length Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]),
                 "Length Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."])
-                ),
+                    format_decimal(get_value(ws, row, headers, ["Length Tolerance - @ 80% Conf."]), 2,
+                ),),
 
                 "Width Tolerance - @ 80% Conf.": get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]),
                 "Width Tolerance - StdDev": calc_tolerance_stddev_from_80_conf(
-                    get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."])
-                ),
+                    format_decimal(get_value(ws, row, headers, ["Width Tolerance - @ 80% Conf."]), 2
+                ),),
             }
 
             writer.writerow(clean_output_row(output_row))
@@ -780,7 +783,7 @@ def get_surface(ws, row: int, headers: dict[str, int]) -> str:
     is_external = get_value(ws, row, headers, ["Is External", "IsExternal"])
 
     if is_external in ("", None):
-        return ""
+        return "U"
 
     text = str(is_external).strip().lower()
 
@@ -790,7 +793,7 @@ def get_surface(ws, row: int, headers: dict[str, int]) -> str:
     if text in {"no", "n", "false", "0"}:
         return "I"
 
-    return ""
+    return "U"
 
 
 def calc_fpr(mb31g, maop):

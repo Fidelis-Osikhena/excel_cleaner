@@ -40,10 +40,22 @@ def _ensure_oneok_columns(ws) -> dict[str, int]:
         ensure_column_after(ws, "Orientation Final", "Orientation Final (Degree)", headers)
         headers = get_headers(ws)
 
-    if "long seam orientation" in headers and "long seam orientation (degree)" not in headers:
-        long_col = headers["long seam orientation"]
-        ws.insert_cols(long_col + 1)
-        ws.cell(row=1, column=long_col + 1).value = "Long Seam Orientation (Degree)"
+    if "long seam orientation" in headers and "long seam orientation final" not in headers:
+        ensure_column_after(
+            ws,
+            "Long Seam Orientation",
+            "Long Seam Orientation Final",
+            headers,
+        )
+        headers = get_headers(ws)
+
+    if "long seam orientation final" in headers and "long seam orientation (degree)" not in headers:
+        ensure_column_after(
+            ws,
+            "Long Seam Orientation Final",
+            "Long Seam Orientation (Degree)",
+            headers,
+        )
         headers = get_headers(ws)
 
     # Length/Width final
@@ -130,6 +142,8 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
     # Output columns
     orientation_final_col = headers.get("orientation final")
     orientation_final_deg_col = headers.get("orientation final (degree)")
+    long_seam_source_col = headers.get("long seam orientation")
+    long_seam_final_col = headers.get("long seam orientation final")
     long_seam_deg_col = headers.get("long seam orientation (degree)")
     length_final_col = headers.get("length (in) final")
     width_final_col = headers.get("width (in) final")
@@ -286,26 +300,28 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
                 deg = orientation_to_degrees(cleaned_main)
                 orientation_final_deg_val = "" if deg is None else deg
 
-        # Process Long Seam Orientation, preserving non-girth rows
-        if long_seam_col and long_seam_deg_col:
-            long_value = ws.cell(row=row, column=long_seam_col).value
+        long_seam_final_val = ""
+        long_seam_deg_val = ""
 
-            # Fill down from the row above if blank
+        if long_seam_source_col and long_seam_final_col and long_seam_deg_col:
+            long_value = ws.cell(row=row, column=long_seam_source_col).value
+
+            # Fill down using the previously generated Final value
             if long_value is None or str(long_value).strip() == "":
                 if row > 2:
-                    long_value = ws.cell(row=row - 1, column=long_seam_col).value
+                    long_value = ws.cell(
+                        row=row - 1,
+                        column=long_seam_final_col,
+                    ).value
 
             cleaned_long = clean_orientation(long_value)
 
             if cleaned_long:
-                long_seam_cleaned_val = cleaned_long
-                deg = orientation_to_degrees(cleaned_long)
-                long_seam_deg_val = "" if deg is None else deg
+                long_seam_final_val = cleaned_long
+                degrees = orientation_to_degrees(cleaned_long)
+                long_seam_deg_val = "" if degrees is None else degrees
 
-                # Write cleaned/fill-down value back into Long Seam Orientation
-                ws.cell(row=row, column=long_seam_col).value = cleaned_long
-
-                # ONLY override Orientation Final for Girth Weld
+                # Only use long seam to override Orientation Final for Girth Weld
                 if is_girth_weld(feature_value):
                     orientation_final_val = cleaned_long
                     orientation_final_deg_val = long_seam_deg_val
@@ -321,9 +337,9 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
             ws.cell(row=row, column=orientation_final_deg_col).value = orientation_final_deg_val
             ws.cell(row=row, column=orientation_final_deg_col).number_format = "0"
 
-        if long_seam_col:
-            ws.cell(row=row, column=long_seam_col).value = long_seam_cleaned_val
-            ws.cell(row=row, column=long_seam_col).number_format = "@"
+        if long_seam_final_col:
+            ws.cell(row=row, column=long_seam_final_col).value = long_seam_final_val
+            ws.cell(row=row, column=long_seam_final_col).number_format = "@"
 
         if long_seam_deg_col:
             ws.cell(row=row, column=long_seam_deg_col).value = long_seam_deg_val
@@ -552,7 +568,7 @@ def _process_oneok_single_pass(ws, headers: dict[str, int], pipe_diameter: float
     for name in [
         "orientation final",
         "orientation final (degree)",
-        "long seam orientation",
+        "long seam orientation final",
         "long seam orientation (degree)",
         "length (in) final",
         "width (in) final",

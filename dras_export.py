@@ -787,10 +787,10 @@ def get_surface(ws, row: int, headers: dict[str, int]) -> str:
 
     text = str(is_external).strip().lower()
 
-    if text in {"yes", "y", "true", "1"}:
+    if text in {"yes", "y", "true", "1", "Ext"}:
         return "E"
 
-    if text in {"no", "n", "false", "0"}:
+    if text in {"no", "n", "false", "0", "Int"}:
         return "I"
 
     return "U"

@@ -798,6 +798,7 @@ def get_surface(ws, row: int, headers: dict[str, int]) -> str:
 
 def calc_fpr(mb31g, maop):
     mb31g_num = to_float(mb31g)
+    
     maop_num = to_float(maop)
 
     if mb31g_num is None or maop_num in (None, 0):
